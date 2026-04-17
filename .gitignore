@@ -1,0 +1,41 @@
+# Environment
+.env
+!.env.example
+
+# Docker volumes / persistent data
+data/
+volumes/
+minio-data/
+influxdb-data/
+frigate-storage/
+prometheus-data/
+grafana-data/
+
+# Mosquitto credentials
+config/mosquitto/password_file
+
+# PlatformIO (ESP32 firmware)
+.pio/
+.vscode/
+edge/**/lib/
+edge/**/include/README
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
