@@ -1,0 +1,29 @@
+# =============================================================================
+# Grafana — Datasource Provisioning
+# =============================================================================
+
+apiVersion: 1
+
+datasources:
+
+  # -- Prometheus — Infrastructure metrics -------------------------------------
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  # -- InfluxDB 3 Core — Sensor data (SQL / Flight SQL) -----------------------
+  - name: InfluxDB
+    type: influxdb
+    uid: influxdb
+    access: proxy
+    url: http://influxdb:8181
+    editable: false
+    jsonData:
+      version: SQL
+      dbName: ${INFLUXDB_DATABASE}
+      httpMode: POST
+      insecureGrpc: true

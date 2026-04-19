@@ -571,9 +571,10 @@ farm-monitoring/                        # Raiz do repositório
 
 ## 12. Fases de Implementação
 
-### Fase 1 — Core Pipeline (Prioridade máxima)
+### Fase 1 — Core Pipeline (Prioridade máxima) ✓ IMPLEMENTADO
 
 **Objetivo:** Ter o pipeline básico funcionando de ponta a ponta.
+**Status:** Completo. Commit `0c27f22`.
 
 | Passo | Componente | Descrição |
 |-------|-----------|-----------|
@@ -603,7 +604,11 @@ farm-monitoring/                        # Raiz do repositório
 | 3.4 | Redpanda Connect | Pipeline `frigate.events` → InfluxDB |
 | 3.5 | Teste | Simular detecção → verificar clip no MinIO e evento no InfluxDB |
 
-### Fase 4 — Observabilidade
+### Fase 4 — Observabilidade ✓ IMPLEMENTADO
+
+**Status:** Completo. Grafana (`:3000`), Prometheus (`:9090`), Node Exporter (`:9100`), cAdvisor (interno).
+Datasources provisionados automaticamente: Prometheus + InfluxDB 3 (SQL/Flight SQL).
+Dashboards provisionados: Sensors Overview (InfluxDB SQL) + Infrastructure Overview (Prometheus).
 
 | Passo | Componente | Descrição |
 |-------|-----------|-----------|
@@ -941,3 +946,33 @@ Se os 3 passos retornam dados, o pipeline está saudável.
 | "Issues deserializing value" no Console | Console tentando Protobuf/MsgPack em payloads JSON | Usar dropdown "JSON" ou verificar env vars no docker-compose |
 | Database não encontrada no InfluxDB | Setup script não criou o database | `curl -X POST http://localhost:8181/api/v3/configure/database -H 'Content-Type: application/json' -d '{"db":"farm"}'` |
 | Porta não acessível (Connection refused) | Porta não mapeada no docker-compose | Verificar seção `ports:` do serviço no docker-compose.yml |
+
+### 17.10 Phase 4 — Observability Stack
+
+**Serviços adicionados:**
+
+| Serviço | Porta (host) | URL |
+|---------|-------------|-----|
+| Grafana | 3000 | http://localhost:3000 |
+| Prometheus | 9090 | http://localhost:9090 |
+| Node Exporter | 9100 | http://localhost:9100/metrics |
+| cAdvisor | *(interno)* | Prometheus scrapes `cadvisor:8080` na rede Docker |
+
+**Verificação rápida:**
+
+```bash
+# 1. Prometheus targets — todos devem estar UP
+curl -s http://localhost:9090/api/v1/targets | python3 -m json.tool | grep '"health"'
+
+# 2. Grafana datasources — devem retornar Prometheus e InfluxDB
+curl -s -u admin:<GF_PASSWORD> http://localhost:3000/api/datasources | python3 -m json.tool
+
+# 3. Grafana dashboards — devem mostrar sensors e infrastructure
+curl -s -u admin:<GF_PASSWORD> http://localhost:3000/api/search | python3 -m json.tool
+```
+
+**Notas:**
+- cAdvisor usa porta 8080 internamente, que conflita com Redpanda Console no host. Por isso NÃO é exposta ao host.
+- No macOS (Docker Desktop), Node Exporter mostra métricas da VM Linux do Docker, não do host real. No Linux final, funciona nativamente.
+- Grafana requer feature flag `newInfluxDSConfigPageDesign` para o datasource InfluxDB 3 SQL (Flight SQL).
+- Datasource InfluxDB usa `insecureGrpc: true` (sem TLS para ambiente dev).
