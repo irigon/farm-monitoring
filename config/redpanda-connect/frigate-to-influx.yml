@@ -1,0 +1,86 @@
+# Pipeline: frigate.events → InfluxDB 3
+# Consumes Frigate detection events from Redpanda, extracts metadata,
+# and writes to InfluxDB as the "frigate_events" measurement.
+#
+# Frigate publishes to MQTT frigate/events → mqtt-to-redpanda routes to
+# Redpanda topic "frigate.events" → this pipeline writes to InfluxDB.
+
+input:
+  redpanda:
+    seed_brokers:
+      - "redpanda:9092"
+    topics:
+      - "frigate.events"
+    consumer_group: "influx-frigate-writer"
+    auto_replay_nacks: true
+
+pipeline:
+  processors:
+    # Only process "new" and "end" events (skip "update" to reduce volume)
+    - mapping: |
+        let payload = this
+
+        # Frigate event JSON structure:
+        # {
+        #   "before": { ... },
+        #   "after": {
+        #     "id": "1709827200.abc",
+        #     "camera": "test_cam",
+        #     "label": "person",
+        #     "top_score": 0.92,
+        #     "score": 0.87,
+        #     "start_time": 1709827200.0,
+        #     "end_time": null or 1709827210.0,
+        #     "has_clip": true,
+        #     "has_snapshot": true,
+        #     "zones": ["yard"],
+        #     "current_zones": ["yard"]
+        #   },
+        #   "type": "new" | "update" | "end"
+        # }
+
+        let event_type = $payload.type.or("unknown")
+
+        # Skip "update" events to reduce write volume
+        root = if $event_type == "update" { deleted() }
+
+        let after = $payload.after
+
+        let camera = $after.camera.or("unknown")
+        let label = $after.label.or("unknown")
+        let score = $after.top_score.or($after.score.or(0))
+        let event_id = $after.id.or("unknown")
+        let has_clip = if $after.has_clip.or(false) { "true" } else { "false" }
+        let has_snapshot = if $after.has_snapshot.or(false) { "true" } else { "false" }
+        let zones = $after.current_zones.or($after.zones.or([])).join(",")
+        let zone_tag = if $zones == "" { "none" } else { $zones }
+
+        let ts_ns = now().ts_unix() * 1000000000
+
+        # InfluxDB line protocol:
+        # frigate_events,camera=test_cam,label=person,type=new,zone=yard score=0.92,event_id="abc",has_clip="true",has_snapshot="true" <timestamp>
+        root = "frigate_events,camera=%s,label=%s,type=%s,zone=%s score=%v,event_id=\"%s\",has_clip=\"%s\",has_snapshot=\"%s\" %v".format(
+          $camera,
+          $label,
+          $event_type,
+          $zone_tag.re_replace_all("[, =]", "_"),
+          $score,
+          $event_id,
+          $has_clip,
+          $has_snapshot,
+          $ts_ns.floor()
+        )
+
+output:
+  http_client:
+    url: "http://influxdb:8181/api/v2/write?bucket=${INFLUXDB_DATABASE}&precision=ns"
+    verb: POST
+    headers:
+      Content-Type: "text/plain; charset=utf-8"
+    max_in_flight: 10
+    batching:
+      count: 50
+      period: 2s
+      processors:
+        - archive:
+            format: lines

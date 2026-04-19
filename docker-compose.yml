@@ -1,8 +1,9 @@
 # =============================================================================
-# Farm Monitoring — Phase 1 + Phase 2 + Phase 4
+# Farm Monitoring — Phase 1 + Phase 2 + Phase 3 + Phase 4
 # =============================================================================
 # Phase 1: Mosquitto, Redpanda, Redpanda Console, Redpanda Connect, InfluxDB 3
 # Phase 2: MinIO (Data Lake)
+# Phase 3: Frigate (Cameras & Detection)
 # Phase 4: Grafana, Prometheus, Node Exporter, cAdvisor
 # =============================================================================
 
@@ -18,6 +19,7 @@ volumes:
   prometheus-data:
   minio-data:        # Dev: Docker volume. Production: replace with bind mount to external drive
                      # e.g. remove this named volume and use "- /mnt/external-hdd/minio:/data" in the minio service
+  frigate-storage:   # Dev: Docker volume. Production: can mount to external drive for recordings
 
 services:
 
@@ -235,6 +237,39 @@ services:
     networks:
       - monitoring
     restart: "no"
+
+  # ===========================================================================
+  # Phase 3: Cameras & Detection (Frigate)
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # Frigate — NVR with AI object detection
+  # ---------------------------------------------------------------------------
+  # Consumes RTSP streams (or test video via go2rtc), runs CPU-based object
+  # detection, publishes events to MQTT (frigate/events), saves clips/snapshots.
+  # Production: replace test video with real RTSP cameras, add Google Coral TPU.
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate
+    restart: unless-stopped
+    ports:
+      - "5000:5000"     # Frigate Web UI
+      - "8554:8554"     # RTSP restream (go2rtc)
+      - "8555:8555/tcp" # WebRTC (TCP)
+      - "8555:8555/udp" # WebRTC (UDP)
+    shm_size: "256mb"   # Shared memory for ffmpeg (increase for multiple cameras)
+    environment:
+      FRIGATE_MQTT_USER: "${FRIGATE_MQTT_USER}"
+      FRIGATE_MQTT_PASSWORD: "${FRIGATE_MQTT_PASSWORD}"
+      GO2RTC_ALLOW_ARBITRARY_EXEC: "true"
+    volumes:
+      - ./config/frigate/config.yml:/config/config.yml
+      - frigate-storage:/media/frigate
+      - ./test-data/video:/test-video:ro
+    depends_on:
+      - mosquitto
+    networks:
+      - monitoring
 
   # ===========================================================================
   # Phase 4: Observability

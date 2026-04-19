@@ -1,0 +1,69 @@
+# =============================================================================
+# Frigate NVR — Configuration
+# =============================================================================
+# CPU-only detection. For production with Google Coral USB TPU, change
+# detectors to: type: edgetpu, device: usb
+#
+# Test camera: go2rtc loops a local MP4 file as RTSP stream.
+# For production: replace go2rtc stream with real RTSP camera URLs.
+# =============================================================================
+
+mqtt:
+  host: mosquitto
+  port: 1883
+  user: '{FRIGATE_MQTT_USER}'
+  password: '{FRIGATE_MQTT_PASSWORD}'
+
+detectors:
+  cpu1:
+    type: cpu
+    num_threads: 2
+
+# -- go2rtc: serves the test video as an internal RTSP stream ----------------
+# Uses exec:ffmpeg with -stream_loop -1 to loop the short test clip indefinitely.
+# -re reads at native framerate to simulate a live camera.
+go2rtc:
+  streams:
+    test_cam:
+      - "exec:ffmpeg -stream_loop -1 -re -i /test-video/test-clip.mp4 -c copy -rtsp_transport tcp -f rtsp {{output}}"
+
+# -- Cameras ------------------------------------------------------------------
+cameras:
+  test_cam:
+    enabled: true
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/test_cam
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
+            - record
+    detect:
+      enabled: true
+      width: 1280
+      height: 720
+      fps: 5
+    record:
+      enabled: true
+      continuous:
+        days: 3
+      motion:
+        days: 7
+      alerts:
+        retain:
+          days: 7
+      detections:
+        retain:
+          days: 7
+    snapshots:
+      enabled: true
+      retain:
+        default: 7
+    objects:
+      track:
+        - person
+        - dog
+        - cat
+        - car
+        - bird
+version: 0.17-0

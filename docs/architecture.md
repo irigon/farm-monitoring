@@ -599,7 +599,11 @@ Dev: Docker named volume. Produção: montar disco externo em `/data`.
 | 2.3 | Redpanda Connect | Pipeline `minio.events` → InfluxDB (metadados) |
 | 2.4 | Teste | Upload manual de arquivo → verificar metadado no InfluxDB |
 
-### Fase 3 — Câmeras e Detecção
+### Fase 3 — Câmeras e Detecção ✓ IMPLEMENTADO
+
+**Status:** Completo. Frigate NVR (`:5000`) com CPU-based detection, go2rtc RTSP restream (`:8554`),
+MQTT events → Redpanda `frigate.events` → Redpanda Connect → InfluxDB `frigate_events`.
+Test camera: looping MP4 via `exec:ffmpeg` em go2rtc. Produção: substituir por câmeras RTSP reais + Google Coral TPU.
 
 | Passo | Componente | Descrição |
 |-------|-----------|-----------|
@@ -608,6 +612,11 @@ Dev: Docker named volume. Produção: montar disco externo em `/data`.
 | 3.3 | Frigate → MQTT | Eventos de detecção publicados no Mosquitto |
 | 3.4 | Redpanda Connect | Pipeline `frigate.events` → InfluxDB |
 | 3.5 | Teste | Simular detecção → verificar clip no MinIO e evento no InfluxDB |
+
+> **Nota:** Passo 3.2 (Frigate → MinIO) requer configuração adicional.
+> Frigate grava clips/snapshots localmente em `/media/frigate`. Para sincronizar com MinIO,
+> será necessário um sidecar (e.g., `mc mirror` ou inotifywait + mc cp) ou usar Frigate's
+> export API. Este passo será completado em iteração futura.
 
 ### Fase 4 — Observabilidade ✓ IMPLEMENTADO
 

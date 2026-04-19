@@ -11,6 +11,9 @@ frigate-storage/
 prometheus-data/
 grafana-data/
 
+# Test data (large media files)
+test-data/video/*.mp4
+
 # Mosquitto credentials
 config/mosquitto/password_file
 
