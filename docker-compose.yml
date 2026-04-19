@@ -1,0 +1,167 @@
+# =============================================================================
+# Farm Monitoring — Phase 1: Core Pipeline
+# =============================================================================
+# Services: Mosquitto, Redpanda, Redpanda Console, Redpanda Connect, InfluxDB 3
+# =============================================================================
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  redpanda-data:
+  influxdb-data:
+  mosquitto-data:
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Mosquitto — MQTT Broker
+  # ---------------------------------------------------------------------------
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./config/mosquitto/password_file:/mosquitto/config/password_file:ro
+      - mosquitto-data:/mosquitto/data
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Redpanda — Streaming (Kafka API compatible)
+  # ---------------------------------------------------------------------------
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
+    container_name: redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --mode=dev-container
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --schema-registry-addr=internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --pandaproxy-addr=internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr=internal://redpanda:8082,external://localhost:18082
+    ports:
+      - "19092:19092"   # Kafka API (external)
+      - "18082:18082"   # Pandaproxy (external)
+      - "18081:18081"   # Schema Registry (external)
+      - "9644:9644"     # Admin API + metrics
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--api-urls", "localhost:9644"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Redpanda Console — UI for topic/message inspection
+  # ---------------------------------------------------------------------------
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:latest
+    container_name: redpanda-console
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: "redpanda:9092"
+      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      KAFKA_SCHEMAREGISTRY_URLS: "http://redpanda:8081"
+      REDPANDA_ADMINAPI_ENABLED: "true"
+      REDPANDA_ADMINAPI_URLS: "http://redpanda:9644"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # InfluxDB 3 Core — Time-series database
+  # ---------------------------------------------------------------------------
+  influxdb:
+    image: influxdb:3-core
+    container_name: influxdb
+    restart: unless-stopped
+    ports:
+      - "8181:8181"
+    command:
+      - influxdb3
+      - serve
+      - --node-id=node0
+      - --object-store=file
+      - --data-dir=/var/lib/influxdb3
+      - --http-bind=0.0.0.0:8181
+      - --without-auth  # Dev mode: no auth. Remove for production.
+    volumes:
+      - influxdb-data:/var/lib/influxdb3
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Redpanda Connect — Declarative pipelines (streams mode)
+  # ---------------------------------------------------------------------------
+  redpanda-connect:
+    image: docker.redpanda.com/redpandadata/connect:latest
+    container_name: redpanda-connect
+    restart: unless-stopped
+    command:
+      - streams
+      - --chilled
+      - /pipelines/*.yml
+    volumes:
+      - ./config/redpanda-connect:/pipelines:ro
+    environment:
+      MQTT_USER: "${MQTT_USER}"
+      MQTT_PASSWORD: "${MQTT_PASSWORD}"
+      INFLUXDB_TOKEN: "${INFLUXDB_TOKEN}"
+      INFLUXDB_DATABASE: "${INFLUXDB_DATABASE}"
+    depends_on:
+      mosquitto:
+        condition: service_started
+      redpanda:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  # ---------------------------------------------------------------------------
+  # Setup — One-shot container to create topics and database
+  # ---------------------------------------------------------------------------
+  setup:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
+    container_name: farm-setup
+    entrypoint: /bin/bash
+    command: /scripts/setup.sh
+    volumes:
+      - ./scripts:/scripts:ro
+    environment:
+      INFLUXDB_DATABASE: "${INFLUXDB_DATABASE}"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    networks:
+      - monitoring
+    restart: "no"

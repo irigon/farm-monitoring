@@ -1,0 +1,38 @@
+# Pipeline: MQTT → Redpanda
+# Subscribes to sensor and frigate MQTT topics, publishes to Redpanda topics.
+
+input:
+  mqtt:
+    urls:
+      - "tcp://mosquitto:1883"
+    client_id: "rp-connect-mqtt-bridge"
+    topics:
+      - "sensors/#"
+      - "frigate/events"
+    qos: 1
+    clean_session: true
+    user: "${MQTT_USER}"
+    password: "${MQTT_PASSWORD}"
+    connect_timeout: 30s
+    auto_replay_nacks: true
+
+pipeline:
+  processors:
+    - switch:
+        # Route frigate events to their own topic
+        - check: meta("mqtt_topic").has_prefix("frigate/")
+          processors:
+            - mapping: |
+                meta output_topic = "frigate.events"
+        # Everything else goes to sensors.telemetry
+        - processors:
+            - mapping: |
+                meta output_topic = "sensors.telemetry"
+
+output:
+  redpanda:
+    seed_brokers:
+      - "redpanda:9092"
+    topic: "${! meta(\"output_topic\") }"
+    key: "${! meta(\"mqtt_topic\") }"
+    max_in_flight: 10

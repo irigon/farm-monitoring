@@ -1,0 +1,54 @@
+# Pipeline: sensors.telemetry → InfluxDB 3
+# Consumes sensor readings from Redpanda, transforms to line protocol,
+# and writes to InfluxDB via HTTP API.
+
+input:
+  redpanda:
+    seed_brokers:
+      - "redpanda:9092"
+    topics:
+      - "sensors.telemetry"
+    consumer_group: "influx-sensor-writer"
+    auto_replay_nacks: true
+
+pipeline:
+  processors:
+    - mapping: |
+        # Expected JSON input:
+        # {"node_id": "n01", "type": "temp", "value": 28.5, "ts": 1709827200}
+        #
+        # Optional fields: "location" (string)
+        #
+        # Output: InfluxDB line protocol
+        # sensor_readings,node_id=n01,sensor_type=temp value=28.5 1709827200000000000
+
+        let node_id = this.node_id.or("unknown")
+        let sensor_type = this.type.or("unknown")
+        let value = this.value
+        let location = this.location.or("default")
+
+        # Timestamp: assume seconds (Unix epoch), convert to nanoseconds
+        let ts = this.ts.or(now().ts_unix())
+        let ts_ns = $ts * 1000000000
+
+        root = "sensor_readings,node_id=%s,sensor_type=%s,location=%s value=%v %v".format(
+          $node_id,
+          $sensor_type,
+          $location,
+          $value,
+          $ts_ns.floor()
+        )
+
+output:
+  http_client:
+    url: "http://influxdb:8181/api/v2/write?bucket=${INFLUXDB_DATABASE}&precision=ns"
+    verb: POST
+    headers:
+      Content-Type: "text/plain; charset=utf-8"
+    max_in_flight: 10
+    batching:
+      count: 100
+      period: 1s
+      processors:
+        - archive:
+            format: lines
