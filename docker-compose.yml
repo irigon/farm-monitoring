@@ -81,6 +81,8 @@ services:
       KAFKA_BROKERS: "redpanda:9092"
       KAFKA_SCHEMAREGISTRY_ENABLED: "true"
       KAFKA_SCHEMAREGISTRY_URLS: "http://redpanda:8081"
+      KAFKA_PROTOBUF_ENABLED: "false"
+      KAFKA_MSGPACK_ENABLED: "false"
       REDPANDA_ADMINAPI_ENABLED: "true"
       REDPANDA_ADMINAPI_URLS: "http://redpanda:9644"
     depends_on:
@@ -124,6 +126,8 @@ services:
     image: docker.redpanda.com/redpandadata/connect:latest
     container_name: redpanda-connect
     restart: unless-stopped
+    ports:
+      - "4195:4195"     # HTTP API (streams, metrics, health)
     command:
       - streams
       - --chilled
