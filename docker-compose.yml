@@ -1,7 +1,8 @@
 # =============================================================================
-# Farm Monitoring — Phase 1 + Phase 4: Core Pipeline + Observability
+# Farm Monitoring — Phase 1 + Phase 2 + Phase 4
 # =============================================================================
 # Phase 1: Mosquitto, Redpanda, Redpanda Console, Redpanda Connect, InfluxDB 3
+# Phase 2: MinIO (Data Lake)
 # Phase 4: Grafana, Prometheus, Node Exporter, cAdvisor
 # =============================================================================
 
@@ -15,6 +16,8 @@ volumes:
   mosquitto-data:
   grafana-data:
   prometheus-data:
+  minio-data:        # Dev: Docker volume. Production: replace with bind mount to external drive
+                     # e.g. remove this named volume and use "- /mnt/external-hdd/minio:/data" in the minio service
 
 services:
 
@@ -168,6 +171,66 @@ services:
       redpanda:
         condition: service_healthy
       influxdb:
+        condition: service_healthy
+    networks:
+      - monitoring
+    restart: "no"
+
+  # ===========================================================================
+  # Phase 2: Data Lake (MinIO)
+  # ===========================================================================
+
+  # ---------------------------------------------------------------------------
+  # MinIO — S3-compatible Object Storage (Data Lake)
+  # ---------------------------------------------------------------------------
+  # Stores media files (clips, snapshots, recordings), exports, and backups.
+  # Bucket notifications push events to Redpanda (minio.events topic).
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"     # S3 API
+      - "9001:9001"     # MinIO Console (web UI)
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      # Prometheus scraping without bearer token (dev mode)
+      MINIO_PROMETHEUS_AUTH_TYPE: "public"
+      # Bucket notifications → Redpanda (Kafka-compatible)
+      MINIO_NOTIFY_KAFKA_ENABLE_PRIMARY: "on"
+      MINIO_NOTIFY_KAFKA_BROKERS_PRIMARY: "redpanda:9092"
+      MINIO_NOTIFY_KAFKA_TOPIC_PRIMARY: "minio.events"
+    volumes:
+      - minio-data:/data
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # MinIO Setup — One-shot: create buckets + configure notifications
+  # ---------------------------------------------------------------------------
+  minio-setup:
+    image: minio/mc:latest
+    container_name: minio-setup
+    entrypoint: /bin/sh
+    command: /scripts/minio-setup.sh
+    volumes:
+      - ./scripts:/scripts:ro
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+    depends_on:
+      minio:
         condition: service_healthy
     networks:
       - monitoring

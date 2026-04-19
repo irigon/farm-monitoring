@@ -1,0 +1,76 @@
+# Pipeline: minio.events → InfluxDB 3
+# Consumes MinIO bucket notification events from Redpanda, extracts metadata,
+# and writes to InfluxDB as the "media_objects" measurement.
+
+input:
+  redpanda:
+    seed_brokers:
+      - "redpanda:9092"
+    topics:
+      - "minio.events"
+    consumer_group: "influx-minio-writer"
+    auto_replay_nacks: true
+
+pipeline:
+  processors:
+    - mapping: |
+        # MinIO bucket notification JSON structure:
+        # {
+        #   "EventName": "s3:ObjectCreated:Put",
+        #   "Key": "media/clips/2024-03-07/clip-001.mp4",
+        #   "Records": [{
+        #     "s3": {
+        #       "bucket": {"name": "media"},
+        #       "object": {"key": "clips/2024-03-07/clip-001.mp4", "size": 1234567, "contentType": "video/mp4", "eTag": "..."}
+        #     },
+        #     "eventTime": "2024-03-07T15:04:05.000Z",
+        #     "eventName": "s3:ObjectCreated:Put"
+        #   }]
+        # }
+
+        # Extract from first record
+        let record = this.Records.index(0)
+
+        let bucket = $record.s3.bucket.name.or("unknown")
+        let size_bytes = $record.s3.object.size.or(0)
+        let content_type = $record.s3.object.contentType.or("application/octet-stream")
+        let event_name = $record.eventName.or(this.EventName.or("unknown"))
+        let etag = $record.s3.object.eTag.or("")
+
+        # Use top-level Key (not URL-encoded) and strip bucket prefix
+        # Key = "media/uploads/test-file.txt" → object_key = "uploads/test-file.txt"
+        let raw_key = this.Key.or($record.s3.object.key.or("unknown"))
+        let object_key = $raw_key.re_replace_all("^[^/]+/", "")
+
+        # Determine source from first path segment (clips/, snapshots/, uploads/, etc.)
+        let source = $object_key.re_replace_all("^([^/]+).*$", "$1").or("unknown")
+
+        # Use event time if available, otherwise now
+        let ts_ns = now().ts_unix() * 1000000000
+
+        # InfluxDB line protocol:
+        # media_objects,bucket=media,content_type=video/mp4,source=clips,event=s3:ObjectCreated:Put object_key="clips/file.mp4",size_bytes=1234567i,etag="abc123" <timestamp>
+        root = "media_objects,bucket=%s,content_type=%s,source=%s,event=%s object_key=\"%s\",size_bytes=%vi,etag=\"%s\" %v".format(
+          $bucket,
+          $content_type.re_replace_all("[, =]", "_"),
+          $source,
+          $event_name.re_replace_all("[, =]", "_"),
+          $object_key.re_replace_all("\"", "\\\""),
+          $size_bytes,
+          $etag,
+          $ts_ns.floor()
+        )
+
+output:
+  http_client:
+    url: "http://influxdb:8181/api/v2/write?bucket=${INFLUXDB_DATABASE}&precision=ns"
+    verb: POST
+    headers:
+      Content-Type: "text/plain; charset=utf-8"
+    max_in_flight: 10
+    batching:
+      count: 50
+      period: 2s
+      processors:
+        - archive:
+            format: lines
