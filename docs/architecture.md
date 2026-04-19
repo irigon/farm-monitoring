@@ -744,3 +744,200 @@ MinIO (mídia). Se possível, separar os discos.
 | **Deep Sleep** | Modo de baixo consumo do ESP32 onde a maior parte do chip é desligada. |
 | **RTSP** | Real Time Streaming Protocol. Protocolo para streaming de vídeo de câmeras IP. |
 | **Site Replication** | Funcionalidade nativa do MinIO para sincronizar dados entre clusters geograficamente distribuídos. |
+
+## 17. Troubleshooting e Verificação do Sistema
+
+### 17.1 Interfaces Disponíveis
+
+| Interface | URL | Descrição |
+|-----------|-----|-----------|
+| **Redpanda Console** | http://localhost:8080 | UI web: topics, mensagens, consumer groups, cluster health |
+| **Redpanda Connect API** | http://localhost:4195 | API HTTP: streams ativos, métricas, health |
+| **InfluxDB API** | http://localhost:8181 | API HTTP apenas (sem UI web). Queries via curl |
+| **Redpanda Admin API** | http://localhost:9644 | Métricas Prometheus, cluster status |
+| **Mosquitto** | localhost:1883 | Broker MQTT (pub/sub via CLI) |
+| **Redpanda Kafka API** | localhost:19092 | Acesso externo à Kafka API (ferramentas, debug) |
+
+### 17.2 Verificar Status dos Serviços
+
+```bash
+# Status geral de todos os containers
+docker-compose ps
+
+# Logs de um serviço específico (últimas 30 linhas)
+docker-compose logs --tail 30 <serviço>
+
+# Logs em tempo real (follow)
+docker-compose logs -f <serviço>
+
+# Logs de todos os serviços
+docker-compose logs --tail 50
+
+# Healthcheck individual
+docker inspect --format='{{.State.Health.Status}}' redpanda
+docker inspect --format='{{.State.Health.Status}}' influxdb
+```
+
+### 17.3 Redpanda Console (http://localhost:8080)
+
+A interface principal para debug de mensagens e topics.
+
+- **Topics**: lista todos os topics (`sensors.telemetry`, `frigate.events`, `minio.events`)
+- Clique em um topic → visualize mensagens com payload JSON, headers, offset e timestamp
+- **Consumer Groups**: verifique o grupo `influx-sensor-writer` e se há lag (mensagens não consumidas)
+
+> **Nota:** Se aparecer "issues deserializing the value", mude o dropdown
+> **Value Deserializer** de "Auto" para "JSON" no topo da visualização de mensagens.
+> As variáveis `KAFKA_PROTOBUF_ENABLED=false` e `KAFKA_MSGPACK_ENABLED=false` no
+> docker-compose já minimizam esse problema.
+
+> **Nota sobre Enterprise Trial:** O Redpanda exibe "Enterprise Trial" na interface.
+> Isso é normal — o Redpanda Community Edition é gratuito e open source. Quando o trial
+> expirar, apenas features enterprise (Shadow Indexing, Cluster Links) são desabilitadas.
+> Tudo que usamos (Kafka API, topics, consumers, Schema Registry) continua funcionando.
+
+### 17.4 Redpanda Connect API (http://localhost:4195)
+
+```bash
+# Verificar se o serviço está pronto
+curl -s http://localhost:4195/ready
+# Esperado: OK
+
+# Listar streams ativos e uptime
+curl -s http://localhost:4195/streams | python3 -m json.tool
+# Esperado:
+# {
+#   "mqtt-to-redpanda": { "active": true, "uptime": ... },
+#   "sensors-to-influx": { "active": true, "uptime": ... }
+# }
+
+# Métricas no formato Prometheus (mensagens processadas, erros, latência)
+curl -s http://localhost:4195/metrics | grep -E 'input_received|output_sent|processor_error'
+```
+
+**Se um stream não aparece ou está `active: false`:**
+1. Verifique os logs: `docker-compose logs --tail 30 redpanda-connect`
+2. Erros de lint no YAML aparecem como warnings (graças ao `--chilled`), mas o stream não inicia
+3. Erros de conexão (MQTT auth, Redpanda unreachable) geram retries com backoff
+
+### 17.5 InfluxDB API (http://localhost:8181)
+
+O InfluxDB 3 Core **não tem interface web**. Toda interação é via API HTTP.
+
+```bash
+# Health check
+curl -s http://localhost:8181/health
+# Esperado: OK
+
+# Listar databases
+curl -s 'http://localhost:8181/api/v3/configure/database' \
+  -G --data-urlencode 'format=json'
+
+# Consultar dados (SQL) — IMPORTANTE: sempre incluir format=json
+curl -s 'http://localhost:8181/api/v3/query_sql' \
+  -G \
+  --data-urlencode 'db=farm' \
+  --data-urlencode 'q=SELECT * FROM sensor_readings ORDER BY time DESC LIMIT 10' \
+  --data-urlencode 'format=json' \
+  | python3 -m json.tool
+
+# Contar registros
+curl -s 'http://localhost:8181/api/v3/query_sql' \
+  -G \
+  --data-urlencode 'db=farm' \
+  --data-urlencode 'q=SELECT COUNT(*) FROM sensor_readings' \
+  --data-urlencode 'format=json'
+
+# Listar measurements (tabelas)
+curl -s 'http://localhost:8181/api/v3/query_sql' \
+  -G \
+  --data-urlencode 'db=farm' \
+  --data-urlencode "q=SHOW TABLES" \
+  --data-urlencode 'format=json'
+```
+
+> **Erro comum:** `serde error: missing field 'format'` — adicione `format=json` em
+> todas as chamadas à API v3.
+
+> **Nota:** Em modo dev (--without-auth), nenhum token é necessário. Em produção,
+> adicione o header: `Authorization: Bearer <token>`
+
+### 17.6 Redpanda — Topics e Mensagens via CLI
+
+```bash
+# Listar topics
+docker exec redpanda rpk topic list --brokers localhost:9092
+
+# Consumir mensagens em tempo real (Ctrl+C para sair)
+docker exec redpanda rpk topic consume sensors.telemetry --brokers localhost:9092
+
+# Consumir apenas N mensagens
+docker exec redpanda rpk topic consume sensors.telemetry --brokers localhost:9092 --num 3
+
+# Detalhes de um topic (partições, offsets, replicas)
+docker exec redpanda rpk topic describe sensors.telemetry --brokers localhost:9092
+
+# Consumer groups — verificar lag
+docker exec redpanda rpk group describe influx-sensor-writer --brokers localhost:9092
+```
+
+### 17.7 Mosquitto — Testar MQTT
+
+```bash
+# Publicar mensagem de teste
+docker run --rm --network farm-monitoring_monitoring eclipse-mosquitto:2 \
+  mosquitto_pub -h mosquitto -p 1883 \
+  -u mqtt_user -P '<MQTT_PASSWORD>' \
+  -t 'sensors/n01/temp' \
+  -m '{"node_id":"n01","type":"temp","value":25.3,"ts":'$(date +%s)'}'
+
+# Subscrever a um topic (tempo real, Ctrl+C para sair)
+docker run --rm --network farm-monitoring_monitoring eclipse-mosquitto:2 \
+  mosquitto_sub -h mosquitto -p 1883 \
+  -u mqtt_user -P '<MQTT_PASSWORD>' \
+  -t 'sensors/#'
+```
+
+### 17.8 Teste End-to-End (Checklist)
+
+Validação completa do pipeline `MQTT → Redpanda → InfluxDB`:
+
+```bash
+# 1. Publicar mensagem MQTT
+docker run --rm --network farm-monitoring_monitoring eclipse-mosquitto:2 \
+  mosquitto_pub -h mosquitto -p 1883 \
+  -u mqtt_user -P '<MQTT_PASSWORD>' \
+  -t 'sensors/test/humidity' \
+  -m '{"node_id":"test","type":"humidity","value":65.2,"ts":'$(date +%s)'}'
+
+# 2. Verificar no Redpanda Console (http://localhost:8080)
+#    → Topic sensors.telemetry deve mostrar a mensagem
+
+# 3. Ou verificar via CLI
+docker exec redpanda rpk topic consume sensors.telemetry \
+  --brokers localhost:9092 --num 1
+
+# 4. Aguardar batching (até 1s) e consultar InfluxDB
+sleep 2
+curl -s 'http://localhost:8181/api/v3/query_sql' \
+  -G \
+  --data-urlencode 'db=farm' \
+  --data-urlencode 'q=SELECT * FROM sensor_readings ORDER BY time DESC LIMIT 3' \
+  --data-urlencode 'format=json' \
+  | python3 -m json.tool
+```
+
+Se os 3 passos retornam dados, o pipeline está saudável.
+
+### 17.9 Problemas Comuns
+
+| Sintoma | Causa Provável | Solução |
+|---------|---------------|---------|
+| InfluxDB healthcheck falha | Auth habilitado sem token | Adicionar `--without-auth` (dev) ou configurar token |
+| Redpanda Connect crash loop | Lint error no YAML dos pipelines | Verificar logs; `--chilled` previne crash mas stream não inicia |
+| MQTT "not Authorized" | Senha no `.env` diferente do `password_file` | Regenerar: `docker run --rm -v ./config/mosquitto:/mosquitto/config eclipse-mosquitto:2 mosquitto_passwd -b -c /mosquitto/config/password_file <user> <password>` |
+| Mensagens não chegam ao InfluxDB | Redpanda Connect não conectou ao MQTT ou Redpanda | Verificar `curl localhost:4195/streams` — stream deve estar `active: true` |
+| `serde error: missing field 'format'` no curl | Falta `format=json` na query InfluxDB v3 | Adicionar `--data-urlencode 'format=json'` |
+| "Issues deserializing value" no Console | Console tentando Protobuf/MsgPack em payloads JSON | Usar dropdown "JSON" ou verificar env vars no docker-compose |
+| Database não encontrada no InfluxDB | Setup script não criou o database | `curl -X POST http://localhost:8181/api/v3/configure/database -H 'Content-Type: application/json' -d '{"db":"farm"}'` |
+| Porta não acessível (Connection refused) | Porta não mapeada no docker-compose | Verificar seção `ports:` do serviço no docker-compose.yml |
