@@ -55,7 +55,10 @@ pipeline:
         let zones = $after.current_zones.or($after.zones.or([])).join(",")
         let zone_tag = if $zones == "" { "none" } else { $zones }
 
-        let ts_ns = now().ts_unix() * 1000000000
+        # Use the real event time (epoch seconds, float) from the Frigate payload:
+        # prefer end_time (event finished), fall back to start_time, then now().
+        let event_ts = $after.end_time.or($after.start_time.or(now().ts_unix()))
+        let ts_ns = ($event_ts * 1000000000).floor()
 
         # InfluxDB line protocol:
         # frigate_events,camera=test_cam,label=person,type=new,zone=yard score=0.92,event_id="abc",has_clip="true",has_snapshot="true" <timestamp>
@@ -68,7 +71,7 @@ pipeline:
           $event_id,
           $has_clip,
           $has_snapshot,
-          $ts_ns.floor()
+          $ts_ns
         )
 
 output:

@@ -45,8 +45,10 @@ pipeline:
         # Determine source from first path segment (clips/, snapshots/, uploads/, etc.)
         let source = $object_key.re_replace_all("^([^/]+).*$", "$1").or("unknown")
 
-        # Use event time if available, otherwise now
-        let ts_ns = now().ts_unix() * 1000000000
+        # Use the real event time (ISO-8601, e.g. "2024-03-07T15:04:05.000Z")
+        # from the MinIO notification, converted to nanoseconds. Fall back to now()
+        # if the field is missing or the format differs.
+        let ts_ns = $record.eventTime.or("").parse_timestamp("2006-01-02T15:04:05.000Z").catch(now()).ts_unix_nano()
 
         # InfluxDB line protocol:
         # media_objects,bucket=media,content_type=video/mp4,source=clips,event=s3:ObjectCreated:Put object_key="clips/file.mp4",size_bytes=1234567i,etag="abc123" <timestamp>
@@ -58,7 +60,7 @@ pipeline:
           $object_key.re_replace_all("\"", "\\\""),
           $size_bytes,
           $etag,
-          $ts_ns.floor()
+          $ts_ns
         )
 
 output:
