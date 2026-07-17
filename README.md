@@ -1,70 +1,53 @@
 # Farm Monitoring System
 
-Sistema de monitoramento distribuído para propriedade de agrofloresta. Capaz de ingerir dados heterogêneos — telemetria de sensores, eventos de movimento, fotos, vídeos e áudio — processá-los em tempo real e armazená-los com políticas de retenção diferenciadas.
+Sistema de monitoramento para uma propriedade de **agrofloresta**. Reúne dados de
+sensores no campo (temperatura, umidade do solo, pH, luminosidade) e das câmeras de
+segurança, processa tudo em tempo real e guarda com segurança — para você ver tanto o
+**agora** quanto o **histórico** da propriedade, de casa ou pelo campo.
 
-## Documentação
+Roda em **hardware próprio** (sem nuvem paga), como containers Docker num servidor
+Linux, com uma cópia da mídia replicada para um segundo local.
 
-- [Arquitetura do sistema](docs/architecture.md) — visão completa do design, componentes, fluxos de dados e fases de implementação.
+## Por que importa
+
+- **Umidade do solo + histórico** → decidir quando e onde irrigar; economizar água.
+- **Temperatura + alertas** → antecipar risco de geada ou calor extremo.
+- **Câmeras com detecção (Frigate)** → perceber intrusão, animais e veículos.
+- **Retenção longa** → analisar sazonalidade e a evolução do pomar ao longo dos anos.
+- **Dashboards (Grafana)** → ver o estado da propriedade num relance.
+
+## Quick Start
+
+```bash
+cp .env.example .env      # edite e troque os "change_me"
+docker compose up -d
+```
+
+Depois, acesse o **Grafana** em http://localhost:3000. O guia completo (pré-requisitos,
+credenciais, interfaces de acesso e validação) está em
+[docs/02-getting-started.md](docs/02-getting-started.md).
 
 ## Stack
 
 | Componente | Papel |
-|-----------|-------|
-| **Mosquitto** | Broker MQTT — ponto de entrada dos dados de sensores |
+|---|---|
+| **Mosquitto** | Broker MQTT — entrada dos dados de sensores |
 | **Redpanda** | Streaming central (Kafka-compatible) — barramento de eventos |
 | **Redpanda Connect** | Pipelines declarativos (YAML) — bridges e transformações |
-| **InfluxDB 3 Core** | Banco de dados time-series — métricas de sensores |
+| **InfluxDB 3 Core** | Banco time-series — métricas de sensores e eventos |
 | **MinIO** | Object storage (Data Lake) — fotos, vídeos, backups |
 | **Frigate** | NVR com detecção de objetos — câmeras IP |
 | **Grafana** | Dashboards e alertas |
 | **Prometheus** | Monitoramento da infraestrutura |
 
-## Pré-requisitos
+## Documentação
 
-- Docker e Docker Compose v2+
-- Linux (servidor headless, 8+ GB RAM)
-
-## Quick Start
-
-```bash
-cp .env.example .env
-# Editar .env com suas credenciais
-
-docker compose up -d
-```
-
-> O `config/mosquitto/password_file` é gerado automaticamente a partir do `.env`
-> (variáveis `MQTT_USER`/`MQTT_PASSWORD` e, se diferente, `FRIGATE_MQTT_USER`/
-> `FRIGATE_MQTT_PASSWORD`) pelo serviço one-shot `mosquitto-setup`, que roda antes
-> do broker. Não é necessário criá-lo manualmente. Se você alterar as credenciais
-> MQTT no `.env`, rode `docker compose up -d --force-recreate mosquitto-setup mosquitto`.
-
-> O sistema está em fase de implementação. Consulte [docs/architecture.md](docs/architecture.md) para detalhes sobre as fases planejadas.
-
-## Estrutura do Repositório
-
-```
-farm-monitoring/
-├── docs/                       # Documentação de arquitetura
-├── docker-compose.yml          # Orquestração dos serviços (docker compose)
-├── .env.example                # Template de variáveis de ambiente
-├── config/                     # Configurações dos serviços
-│   ├── mosquitto/
-│   ├── redpanda/
-│   ├── redpanda-connect/
-│   ├── influxdb/
-│   ├── frigate/
-│   ├── grafana/
-│   ├── prometheus/
-│   └── minio/
-├── scripts/                    # Scripts de setup, backup, downsample
-└── edge/                       # Firmware ESP32 (sensores e gateway LoRa)
-    ├── esp32-sensor/
-    └── esp32-gateway/
-```
-
-## Status
-
-**Fase 1 — Core Pipeline** (em planejamento)
-
-Veja todas as fases em [docs/architecture.md](docs/architecture.md#12-fases-de-implementação).
+| # | Documento | Conteúdo |
+|---|---|---|
+| 1 | [Visão Geral](docs/01-overview.md) | O que é e **por que importa** para a agrofloresta |
+| 2 | [Como Começar](docs/02-getting-started.md) | Pré-requisitos, setup, interfaces de acesso, validação |
+| 3 | [Como Usar](docs/03-usage.md) | Dashboards, consultar dados, câmeras, publicar leitura de teste |
+| 4 | [Arquitetura](docs/04-architecture.md) | Infraestrutura física, software e estrutura do repositório |
+| 5 | [Fluxos de Dados](docs/05-data-flows.md) | Como os dados atravessam o sistema |
+| 6 | [Componentes e Dados](docs/06-components.md) | Decisões técnicas, schemas e dashboards |
+| 7 | [Operações](docs/07-operations.md) | Recursos, troubleshooting, segurança, riscos, glossário |
