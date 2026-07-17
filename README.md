@@ -33,6 +33,12 @@ cp .env.example .env
 docker compose up -d
 ```
 
+> O `config/mosquitto/password_file` é gerado automaticamente a partir do `.env`
+> (variáveis `MQTT_USER`/`MQTT_PASSWORD` e, se diferente, `FRIGATE_MQTT_USER`/
+> `FRIGATE_MQTT_PASSWORD`) pelo serviço one-shot `mosquitto-setup`, que roda antes
+> do broker. Não é necessário criá-lo manualmente. Se você alterar as credenciais
+> MQTT no `.env`, rode `docker compose up -d --force-recreate mosquitto-setup mosquitto`.
+
 > O sistema está em fase de implementação. Consulte [docs/architecture.md](docs/architecture.md) para detalhes sobre as fases planejadas.
 
 ## Estrutura do Repositório
