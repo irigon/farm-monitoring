@@ -59,5 +59,5 @@ Um cron job (ou script agendado) roda periodicamente para agregar dados antigos:
 | `sensor_readings` | `node_id`, `sensor_type`, `location` | `value` (float) | Redpanda Connect ← sensores | 30 dias (bruto) |
 | `sensor_readings_hourly` | `node_id`, `sensor_type`, `location` | `avg`, `min`, `max`, `count` | Downsample job | 1 ano |
 | `sensor_readings_daily` | `node_id`, `sensor_type`, `location` | `avg`, `min`, `max`, `count` | Downsample job | 1 ano |
-| `frigate_events` | `camera`, `label`, `zone` | `score`, `duration`, `clip_url`, `snapshot_url` | Redpanda Connect ← Frigate | Indefinido |
-| `media_objects` | `bucket`, `content_type`, `source` | `object_key`, `size_bytes`, `url` | Redpanda Connect ← MinIO events | Indefinido |
+| `frigate_events` | `camera`, `label`, `type`, `zone` | `score`, `event_id`, `has_clip`, `has_snapshot` | Redpanda Connect ← Frigate | Indefinido |
+| `media_objects` | `bucket`, `content_type`, `source`, `event` | `object_key`, `size_bytes`, `etag` | Redpanda Connect ← MinIO events | Indefinido |

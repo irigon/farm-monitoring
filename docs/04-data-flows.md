@@ -90,19 +90,19 @@ Redpanda (:9092)
     ▼
 Redpanda Connect
     │
-    │ Pipeline YAML: extrai metadados, gera link presigned (ou path),
-    │ formata como InfluxDB line protocol
+    │ Pipeline YAML: extrai metadados do evento (bucket, key, tamanho,
+    │ content-type, etag) e formata como InfluxDB line protocol
     ▼
 InfluxDB 3 Core
     │
     │ Measurement: media_objects
-    │ Tags: bucket, content_type, source (frigate/manual/script)
-    │ Fields: object_key, size_bytes, presigned_url
+    │ Tags: bucket, content_type, source (clips/snapshots/uploads/…), event
+    │ Fields: object_key, size_bytes, etag
     │ Retenção: indefinida (metadados são leves)
     ▼
 Grafana
-    Timeline de mídia com links clicáveis para MinIO
-    Ao clicar: abre a foto/vídeo direto do MinIO via presigned URL
+    Timeline de mídia referenciando os objetos no MinIO
+    (o link para o objeto é montado a partir de bucket + object_key)
 ```
 
 ## 4.4 Fluxo 4 — Alertas

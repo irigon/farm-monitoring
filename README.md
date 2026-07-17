@@ -46,7 +46,7 @@ docker compose up -d
 ```
 farm-monitoring/
 ├── docs/                       # Documentação de arquitetura
-├── docker-compose.yml          # Orquestração dos serviços
+├── docker-compose.yml          # Orquestração dos serviços (docker compose)
 ├── .env.example                # Template de variáveis de ambiente
 ├── config/                     # Configurações dos serviços
 │   ├── mosquitto/

@@ -15,16 +15,16 @@
 
 ```bash
 # Status geral de todos os containers
-docker-compose ps
+docker compose ps
 
 # Logs de um serviço específico (últimas 30 linhas)
-docker-compose logs --tail 30 <serviço>
+docker compose logs --tail 30 <serviço>
 
 # Logs em tempo real (follow)
-docker-compose logs -f <serviço>
+docker compose logs -f <serviço>
 
 # Logs de todos os serviços
-docker-compose logs --tail 50
+docker compose logs --tail 50
 
 # Healthcheck individual
 docker inspect --format='{{.State.Health.Status}}' redpanda
@@ -42,7 +42,7 @@ A interface principal para debug de mensagens e topics.
 > **Nota:** Se aparecer "issues deserializing the value", mude o dropdown
 > **Value Deserializer** de "Auto" para "JSON" no topo da visualização de mensagens.
 > As variáveis `KAFKA_PROTOBUF_ENABLED=false` e `KAFKA_MSGPACK_ENABLED=false` no
-> docker-compose já minimizam esse problema.
+> docker compose já minimizam esse problema.
 
 > **Nota sobre Enterprise Trial:** O Redpanda exibe "Enterprise Trial" na interface.
 > Isso é normal — o Redpanda Community Edition é gratuito e open source. Quando o trial
@@ -69,7 +69,7 @@ curl -s http://localhost:4195/metrics | grep -E 'input_received|output_sent|proc
 ```
 
 **Se um stream não aparece ou está `active: false`:**
-1. Verifique os logs: `docker-compose logs --tail 30 redpanda-connect`
+1. Verifique os logs: `docker compose logs --tail 30 redpanda-connect`
 2. Erros de lint no YAML aparecem como warnings (graças ao `--chilled`), mas o stream não inicia
 3. Erros de conexão (MQTT auth, Redpanda unreachable) geram retries com backoff
 
