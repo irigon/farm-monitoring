@@ -52,6 +52,8 @@ services:
     image: eclipse-mosquitto:2
     container_name: mosquitto
     restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 32m
     ports:
       - "1883:1883"
     volumes:
@@ -71,6 +73,8 @@ services:
     image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
     container_name: redpanda
     restart: unless-stopped
+    mem_limit: 2g
+    mem_reservation: 1g
     command:
       - redpanda
       - start
@@ -108,6 +112,8 @@ services:
     image: docker.redpanda.com/redpandadata/console:latest
     container_name: redpanda-console
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
     ports:
       - "8080:8080"
     environment:
@@ -131,6 +137,8 @@ services:
     image: influxdb:3-core
     container_name: influxdb
     restart: unless-stopped
+    mem_limit: 1g
+    mem_reservation: 256m
     ports:
       - "8181:8181"
     command:
@@ -159,6 +167,8 @@ services:
     image: docker.redpanda.com/redpandadata/connect:latest
     container_name: redpanda-connect
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 32m
     ports:
       - "4195:4195"     # HTTP API (streams, metrics, health)
     command:
@@ -216,6 +226,8 @@ services:
     image: minio/minio:latest
     container_name: minio
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"     # S3 API
@@ -277,6 +289,8 @@ services:
     image: ghcr.io/blakeblackshear/frigate:stable
     container_name: frigate
     restart: unless-stopped
+    mem_limit: 1500m
+    mem_reservation: 512m
     ports:
       - "5000:5000"     # Frigate Web UI
       - "8554:8554"     # RTSP restream (go2rtc)
@@ -307,6 +321,8 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
+    mem_limit: 384m
+    mem_reservation: 96m
     ports:
       - "3000:3000"
     environment:
@@ -333,6 +349,8 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
+    mem_limit: 512m
+    mem_reservation: 128m
     ports:
       - "9090:9090"
     command:
@@ -352,6 +370,8 @@ services:
     image: prom/node-exporter:latest
     container_name: node-exporter
     restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 16m
     ports:
       - "9100:9100"
     networks:
@@ -366,6 +386,8 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
     restart: unless-stopped
+    mem_limit: 256m
+    mem_reservation: 64m
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
