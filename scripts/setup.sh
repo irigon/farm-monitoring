@@ -34,14 +34,21 @@ echo ""
 echo "--- Creating InfluxDB database: $DB_NAME ---"
 
 # Wait for InfluxDB to be ready
+influx_ready=false
 for i in $(seq 1 30); do
   if curl -sf "$INFLUXDB_URL/health" > /dev/null 2>&1; then
     echo "InfluxDB is ready"
+    influx_ready=true
     break
   fi
   echo "Waiting for InfluxDB... ($i/30)"
   sleep 2
 done
+
+if [ "$influx_ready" != "true" ]; then
+  echo "ERROR: InfluxDB not ready at $INFLUXDB_URL after ~60s (30 attempts). Aborting."
+  exit 1
+fi
 
 # Create database using the v3 API (POST /api/v3/configure/database)
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \

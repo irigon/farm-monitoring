@@ -13,14 +13,21 @@ echo "=== MinIO Setup ==="
 # -- Wait for MinIO to be ready -----------------------------------------------
 echo ""
 echo "--- Waiting for MinIO ---"
+ready=false
 for i in $(seq 1 30); do
   if mc alias set "$MINIO_ALIAS" "$MINIO_HOST" "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" > /dev/null 2>&1; then
     echo "MinIO is ready"
+    ready=true
     break
   fi
   echo "Waiting for MinIO... ($i/30)"
   sleep 2
 done
+
+if [ "$ready" != "true" ]; then
+  echo "ERROR: MinIO not ready at $MINIO_HOST after ~60s (30 attempts). Aborting."
+  exit 1
+fi
 
 # Verify connection
 mc admin info "$MINIO_ALIAS" > /dev/null 2>&1 || {

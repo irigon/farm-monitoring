@@ -310,6 +310,36 @@ services:
     networks:
       - monitoring
 
+  # ---------------------------------------------------------------------------
+  # Frigate → MinIO — Continuous media sync sidecar
+  # ---------------------------------------------------------------------------
+  # Frigate has no native S3 backend; it writes clips/recordings/exports to its
+  # local volume. This sidecar mirrors that volume into the MinIO "media" bucket
+  # via `mc mirror --watch`, which triggers minio.events → InfluxDB media_objects.
+  frigate-to-minio:
+    image: minio/mc:latest
+    container_name: frigate-to-minio
+    restart: unless-stopped
+    mem_limit: 128m
+    mem_reservation: 32m
+    entrypoint: /bin/sh
+    command: /scripts/frigate-to-minio.sh
+    volumes:
+      - ./scripts:/scripts:ro
+      - frigate-storage:/media/frigate:ro
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+      frigate:
+        condition: service_started
+    networks:
+      - monitoring
+
   # ===========================================================================
   # Phase 4: Observability
   # ===========================================================================
