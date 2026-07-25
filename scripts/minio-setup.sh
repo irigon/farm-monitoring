@@ -36,6 +36,18 @@ mc admin info "$MINIO_ALIAS" > /dev/null 2>&1 || {
 }
 
 # -- Create buckets ------------------------------------------------------------
+#
+# Path convention inside the "media" bucket. The minio-to-influx pipeline derives
+# the "source" tag of media_objects from the FIRST path segment, so keep prefixes
+# consistent:
+#   clips/      → Frigate video clips
+#   snapshots/  → Frigate detection snapshots
+#   uploads/    → manual/script uploads
+#   audio/      → annotation audio recordings (content lives here; pointer in InfluxDB)
+#   photos/     → annotation photos
+#   notes/      → annotation text (.txt/.md; content lives here, not in InfluxDB)
+# The lightweight annotation event (location/kind/summary/lat/lon/object_key) is
+# published separately to MQTT topic annotations/{location} → measurement "annotations".
 echo ""
 echo "--- Creating buckets ---"
 

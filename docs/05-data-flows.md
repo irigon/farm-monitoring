@@ -98,3 +98,58 @@ MinIO (Servidor Principal)  ──Site Replication (via internet/VPN)──▶  
         sincroniza buckets, objetos, políticas e IAM
         funciona como backup geográfico; pode ser promovido em caso de falha
 ```
+
+## 5.6 Fluxo 6 — Anotações (áudio / foto / texto)
+
+Observações humanas feitas em campo: um áudio ditado, uma foto de uma planta, uma
+nota de texto sobre o estado de uma área. É o fluxo que responde *"o quê e por quê"*,
+complementando os sensores (que respondem *"quanto"*).
+
+Segue a mesma dualidade da mídia: **o conteúdo vai para o data lake; um evento leve
+vai para o barramento**.
+
+```
+Você (campo) — grava áudio / tira foto / escreve nota
+        │
+        ├──▶ CONTEÚDO → MinIO (bucket media/, prefixos audio/ | photos/ | notes/)
+        │        │  Bucket Notification → segue o Fluxo 3 (media_objects)
+        │        ▼
+        │    InfluxDB (media_objects)  — indexa o objeto por si só
+        │
+        └──▶ EVENTO LEVE → MQTT topic: annotations/{location}
+                 │  Payload: {"ts":..,"location":"talhao-norte","kind":"audio",
+                 │            "lat":-30.12345,"lon":-51.98765,"gps_accuracy":4.5,
+                 │            "object_key":"audio/2026-07-21/ann-001.opus",
+                 │            "summary":"pulgao na goiabeira"}
+                 ▼
+        Mosquitto → mqtt-to-redpanda → Redpanda (annotations.events)
+                  → annotations-to-influx → InfluxDB
+                 │  measurement: annotations
+                 │  tags: location, kind  |  fields: lat, lon, gps_accuracy, object_key, summary
+```
+
+Pontos de design:
+
+- **Modelo de contexto (Opção 2):** `location` é **um** tipo de contexto (o "onde"),
+  modelado como tag de baixa cardinalidade. Outros tipos (`asset`, `subsystem`, …)
+  podem ser adicionados como novas tags no futuro. O InfluxDB aceita tags novas sem
+  migração; note, porém, que adicionar um novo tipo de contexto exige editar o
+  pipeline `annotations-to-influx.yml` (que hoje monta apenas `location` e `kind`).
+- **GPS são fields, nunca tags:** coordenadas têm cardinalidade altíssima (quase únicas
+  por ponto); como tags, explodiriam o número de séries. `lat`/`lon`/`gps_accuracy` são
+  fields **opcionais** e são **omitidos quando ausentes** (nada de sentinela).
+- **`summary`** é um rótulo curto **opcional e fornecido por quem publica**. O sistema
+  **nunca** o gera automaticamente (transcrição/descrição seriam específicas de domínio
+  e quebrariam a genericidade). O corpo/mídia completo vive sempre no MinIO.
+- **Correlação:** como `annotations`, `sensor_readings`, `frigate_events` e
+  `media_objects` compartilham timestamp (e escopo), é possível cruzar uma anotação
+  com as leituras de sensores e as fotos do mesmo período/área — por janela de tempo
+  no Grafana ou por SQL.
+- **Busca por raio (ex.: 30 m de um ponto):** o InfluxDB 3 não tem funções geoespaciais
+  nativas, mas dá para (1) pré-filtrar por *bounding box* em SQL sobre `lat`/`lon`
+  (~0.00027° ≈ 30 m em latitude; em longitude, dividir por `cos(lat)`) e (2) refinar
+  para o círculo exato via Haversine na própria query (DataFusion) ou na aplicação.
+  Pontos sem GPS são naturalmente ignorados nessa busca.
+- **Enriquecimento futuro (opcional):** transcrever um áudio ou descrever uma foto é um
+  passo separado que grava *outra* annotation apontando para o mesmo `object_key`, sem
+  contaminar o caminho base de ingestão.

@@ -9,6 +9,7 @@ input:
     topics:
       - "sensors/#"
       - "frigate/events"
+      - "annotations/#"
     qos: 1
     clean_session: true
     user: "${MQTT_USER}"
@@ -24,6 +25,11 @@ pipeline:
           processors:
             - mapping: |
                 meta output_topic = "frigate.events"
+        # Route human annotations (audio/photo/text observations) to their own topic
+        - check: meta("mqtt_topic").has_prefix("annotations/")
+          processors:
+            - mapping: |
+                meta output_topic = "annotations.events"
         # Everything else goes to sensors.telemetry
         - processors:
             - mapping: |

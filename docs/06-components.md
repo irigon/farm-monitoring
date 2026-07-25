@@ -30,6 +30,9 @@ os dashboards que existem hoje.
 | `media/clips/` | Clips de vídeo gerados pelo Frigate |
 | `media/snapshots/` | Snapshots de detecção do Frigate |
 | `media/uploads/` | Fotos/vídeos enviados manualmente ou por scripts |
+| `media/audio/` | Áudios de anotações (conteúdo; ponteiro em `annotations`) |
+| `media/photos/` | Fotos de anotações |
+| `media/notes/` | Texto de anotações (`.txt`/`.md`; conteúdo fica aqui, não no InfluxDB) |
 | `exports/` | Exports do InfluxDB (Parquet, CSV) |
 | `backups/` | Backups de configuração, dumps, etc. |
 
@@ -68,6 +71,18 @@ Estes são os schemas **realmente emitidos** pelos pipelines em
 | `object_key` | field (string) | Caminho do objeto (sem o prefixo do bucket) |
 | `size_bytes` | field (int) | Tamanho em bytes |
 | `etag` | field (string) | ETag do objeto |
+
+### `annotations` (de `annotations-to-influx`)
+Observações humanas (áudio/foto/texto). Só metadados + ponteiro; o conteúdo fica no MinIO.
+| Campo | Tipo | Descrição |
+|---|---|---|
+| `location` | tag | Tipo de contexto "onde" (zona/local; padrão: `default`). Modelo de contexto Opção 2: outros tipos (`asset`, `subsystem`, …) podem ser adicionados como tags no futuro, sem mudança de esquema |
+| `kind` | tag | Tipo da anotação (`audio`, `photo`, `text`, …; padrão: `unknown`) |
+| `lat` | field (float) | Latitude GPS — **opcional, omitido quando ausente** |
+| `lon` | field (float) | Longitude GPS — **opcional, omitido quando ausente** |
+| `gps_accuracy` | field (float) | Precisão do GPS em metros — **opcional** |
+| `object_key` | field (string) | Ponteiro para o conteúdo no MinIO (vazio se não houver mídia) |
+| `summary` | field (string) | Rótulo curto **opcional, fornecido pelo cliente** (nunca autogerado) |
 
 ## 6.5 Política de retenção
 

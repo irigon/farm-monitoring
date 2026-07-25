@@ -1,9 +1,9 @@
 # Farm Monitoring System
 
 Sistema de monitoramento para uma propriedade de **agrofloresta**. Reúne dados de
-sensores no campo (temperatura, umidade do solo, pH, luminosidade) e das câmeras de
-segurança, processa tudo em tempo real e guarda com segurança — para você ver tanto o
-**agora** quanto o **histórico** da propriedade, de casa ou pelo campo.
+sensores no campo (temperatura, umidade do solo, pH, luminosidade), anotações e fotos,
+e das câmeras de segurança, processa tudo em tempo real e guarda com segurança — para
+você ver tanto o **agora** quanto o **histórico** da propriedade, de casa ou pelo campo.
 
 Roda em **hardware próprio** (sem nuvem paga), como containers Docker num servidor
 Linux, com uma cópia da mídia replicada para um segundo local.
@@ -13,6 +13,7 @@ Linux, com uma cópia da mídia replicada para um segundo local.
 - **Umidade do solo + histórico** → decidir quando e onde irrigar; economizar água.
 - **Temperatura + alertas** → antecipar risco de geada ou calor extremo.
 - **Câmeras com detecção (Frigate)** → perceber intrusão, animais e veículos.
+- **Fotos e anotações** → registrar observações de campo e buscá-las ao longo do tempo.
 - **Retenção longa** → analisar sazonalidade e a evolução do pomar ao longo dos anos.
 - **Dashboards (Grafana)** → ver o estado da propriedade num relance.
 
@@ -44,7 +45,8 @@ credenciais, interfaces de acesso e validação) está em
 
 | # | Documento | Conteúdo |
 |---|---|---|
-| 1 | [Visão Geral](docs/01-overview.md) | O que é e **por que importa** para a agrofloresta |
+| 0 | [Modelo Conceitual](docs/00-conceptual-model.md) | O **modelo de dados neutro** (Evento Canônico) que fundamenta a plataforma |
+| 1 | [Visão Geral](docs/01-overview.md) | O que é e **por que importa** (agrofloresta como vertical de exemplo) |
 | 2 | [Como Começar](docs/02-getting-started.md) | Pré-requisitos, setup, interfaces de acesso, validação |
 | 3 | [Como Usar](docs/03-usage.md) | Dashboards, consultar dados, câmeras, publicar leitura de teste |
 | 4 | [Arquitetura](docs/04-architecture.md) | Infraestrutura física, software e estrutura do repositório |
