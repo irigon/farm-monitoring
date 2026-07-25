@@ -8,9 +8,11 @@
 > Status possíveis: `aceito` · `a revisar`.
 >
 > **Vocabulário mínimo** (definido em detalhe no [modelo conceitual](00-conceptual-model.md)):
-> o **Evento Canônico** tem oito campos. `kind` = a *forma* do dado (enum fechado);
-> `source` = *quem/o quê* gerou (proveniência); `measure` = *o que* está sendo
-> medido/detectado (semântica); `value` = a grandeza numérica; `blob_ref` = ponteiro
+> o **Evento Canônico** tem um `ts` (event time) mais oito campos de conteúdo. `kind` =
+> a *forma* do dado (enum fechado: `reading`, `detection`, `state`, `annotation`,
+> `object`); `source` = *quem/o quê* gerou (proveniência); `measure` = *o que* está sendo
+> medido/detectado (semântica); `value` = a grandeza **numérica** (agregável; estado
+> categórico é expresso via `measure`, ver ADR-5); `blob_ref` = ponteiro
 > para um blob; `context{}` = qualificadores de agrupamento (baixa cardinalidade);
 > `attrs{}` = atributos descritivos do fato (alta cardinalidade). Os ADRs abaixo
 > assumem esse vocabulário.
@@ -44,13 +46,14 @@
 
 ### ADR-3: Evento Canônico como unidade central
 
-- **Decisão:** toda fonte é normalizada para um único formato de 8 campos: `ts, kind, source, measure, value?, blob_ref?, context{}, attrs{}`.
+- **Decisão:** toda fonte é normalizada para um único formato — `ts` (event time) mais oito campos de conteúdo: `kind, source, measure, value?, blob_ref?, context{}, attrs{}`.
 - **Por quê:** unifica sensores, câmeras, anotações e objetos numa forma só; é o que torna a plataforma genérica e o que permite correlacionar dados por tempo/escopo.
-- **Critério de promoção (por que um campo fica fora do `context{}`):** promover um campo é uma decisão **de modelo** — define *que o campo existe e o que ele significa*. Não é uma decisão de armazenamento. O critério é **semântica de domínio**, nunca indexação: um campo é promovido quando o *domínio* precisa referi-lo por um nome canônico estável:
-    - `value` / `blob_ref` — promovidos por **regra de domínio**: são a própria definição de evento (ADR-2, "todo evento tem `value`, `blob_ref` ou ambos"). Ficariam fora do `context` mesmo num banco documental.
-    - `source` / `measure` — promovidos por serem os **eixos de consulta universais** do domínio: precisam de nome canônico único para que uma query/dashboard funcione para *qualquer* fonte (evitando a despadronização atual `node_id`/`camera`/`bucket`).
-    - `context{}` — recebe os **qualificadores livres e específicos de vertical** (`location`, `zone`, `apartment`…), cujo vocabulário o domínio não fixa (baixa cardinalidade → agrupamento).
-    - `attrs{}` — recebe os **atributos descritivos do fato** (`lat`, `lon`, `score`, `battery`, `rssi`…): alta cardinalidade, lidos/filtrados mas não agrupados. Simetria física: `context{}`→tag, `attrs{}`→field.
+- **Critério de promoção (dois níveis distintos):** a decisão divide-se em dois níveis com critérios *diferentes* — é isso que dissolve a aparente contradição "semântica vs. indexação". **Nível 1 — promover (campo de primeira classe):** critério = **necessidade de domínio**, não padrão de acesso. **Nível 2 — classificar o resíduo não-promovido:** *aqui, e só aqui,* critério = **padrão de acesso / cardinalidade**.
+    - `value` / `blob_ref` — **Nível 1**, por **regra de domínio**: são a própria definição de evento (ADR-2, "todo evento tem `value`, `blob_ref` ou ambos"). Ficariam fora do `context` mesmo num banco documental.
+    - `source` / `measure` — **Nível 1**, por serem **eixos de consulta universais**: existem consultas "tudo deste `source`" / "tudo com este `measure`" que precisam funcionar para *qualquer* fonte, com nome canônico único (evitando a despadronização atual `node_id`/`camera`/`bucket`). É por isso que `source`, apesar de ser o eixo aberto de maior cardinalidade, é primeira-classe: foi promovido por domínio, logo não passa pelo critério de cardinalidade do Nível 2.
+    - `context{}` — **Nível 2**: qualificadores de **baixa cardinalidade**, usados para *agrupar* (`location`, `zone`, `apartment`…).
+    - `attrs{}` — **Nível 2**: **atributos descritivos de alta cardinalidade**, lidos/filtrados mas não agrupados (`lat`, `lon`, `score`, `battery`, `rssi`…). (Como o adaptador materializa cada contêiner — p.ex. dimensão de agrupamento vs. atributo — é detalhe do adaptador.)
+  Ou seja: **padrão de acesso conta — mas só governa o resíduo não-promovido.** A promoção é anterior e por outra razão (domínio).
 - **Dois planos distintos (por que não há contradição):** definir os campos de antemão **não** define como armazená-los. São perguntas separadas:
     - *Quais campos existem e o que significam?* → plano de **modelo/domínio**, fixado aqui pela promoção.
     - *Como cada campo é fisicamente gravado* (índice, coluna, documento; "tag vs field")? → plano de **armazenamento**, responsabilidade **exclusiva do adaptador de saída** (ver ADR-6/ADR-7), invisível ao modelo.
@@ -81,9 +84,9 @@
 ### ADR-6: Modelo híbrido (campos promovidos + `context{}` / `attrs{}` abertos)
 
 - **Decisão:** promover `source`, `measure`, `value`, `blob_ref` a campos de primeira classe; manter **dois contêineres abertos** para o restante: `context{}` para qualificadores de agrupamento (ex.: `location`, `zone`) e `attrs{}` para atributos descritivos do fato (ex.: `lat`, `score`, `battery`).
-- **Por quê:** a promoção é por **semântica de domínio** (ver critério no ADR-3): `value`/`blob_ref` são regra de domínio (ADR-2); `source`/`measure` são eixos de consulta universais. O **mapeamento físico** (o que vira índice/tag vs. agregável/field vs. coluna/documento) fica confinado ao **adaptador de saída** — não vaza para o modelo. Ou seja: o modelo pré-define *quais campos existem*; o adaptador decide *como armazená-los*.
+- **Por quê:** a promoção segue o critério de **dois níveis** do ADR-3 — Nível 1 (necessidade de domínio) promove `value`/`blob_ref` (regra de domínio, ADR-2) e `source`/`measure` (eixos de consulta universais); Nível 2 (padrão de acesso/cardinalidade) classifica o resíduo em `context{}` vs. `attrs{}`. O **mapeamento físico** (o que vira índice/tag vs. agregável/field vs. coluna/documento) fica confinado ao **adaptador de saída** — não vaza para o modelo. Ou seja: o modelo pré-define *quais campos existem*; o adaptador decide *como armazená-los*.
 - **Alternativa descartada:** modelo `{kind, context}` puro (tudo dentro de `context`) — logicamente elegante, mas obriga o sistema a decidir item a item o papel físico de cada campo; descartado por custo de busca/indexação. Reconsiderar se o banco mudar para documental.
-- **Nota de materialização:** a *abertura* de `context{}` e `attrs{}` é propriedade do **modelo**; sua materialização depende do adaptador. Para cumprir a promessa "qualificador novo sem migração", o adaptador de saída deve **iterar dinamicamente** sobre as chaves de cada contêiner — mapeando `context{}`→tag e `attrs{}`→field — e não listar chaves fixas no pipeline (como faz o `annotations-to-influx.yml` atual, que só monta `location`/`kind`). Sem isso, a promessa não se cumpre e todo novo qualificador exige editar o adaptador.
+- **Nota (nível de abstração):** a *abertura* de `context{}`/`attrs{}` — aceitar chaves novas sem migração — é propriedade do **modelo**. Como o adaptador de saída materializa dinamicamente essas chaves (para cumprir a promessa "qualificador novo sem migração") é detalhe do adaptador, tratado no doc de arquitetura, não aqui.
 - **Status:** aceito
 
 ---
@@ -109,16 +112,43 @@
 ### ADR-9: Localização — lugar nomeado vs. coordenada precisa
 
 - **Decisão:** distinguir dois "ondes". **Lugar nomeado** (`location`, `zone`) → `context{}` (baixa cardinalidade, dimensão de agrupamento). **Coordenada precisa** (`lat`/`lon`/`gps_accuracy`) → `attrs{}` (**atributo descritivo** do evento), incluída só quando relevante e omitida quando ausente; nunca `value`, nunca tag, nunca `context{}`.
-- **Por quê:** coordenada não é a grandeza medida (logo não é `value`) e tem cardinalidade altíssima (quase única por ponto), o que quebraria a indexação se virasse tag. Muitos eventos são estáticos (sensor fixo) e não precisam repetir GPS; outros (áudio/foto em campo) precisam. No mapa físico o adaptador a grava como *field*; busca por raio via bounding-box + Haversine na query.
-- **Alternativa descartada:** (a) GPS como `value` — categoria errada (não é a medida); (b) GPS como tag em `context{}` — explosão de cardinalidade/séries (por isso vai em `attrs{}`, mapeado como field).
+- **Por quê:** coordenada não é a grandeza medida (logo não é `value`) e tem cardinalidade altíssima (quase única por ponto), o que quebraria a indexação se virasse tag. Muitos eventos são estáticos (sensor fixo) e não precisam repetir GPS; outros (áudio/foto em campo) precisam. Como o adaptador grava a coordenada e como implementa busca por raio é detalhe do adaptador, no doc de arquitetura.
+- **Alternativa descartada:** (a) GPS como `value` — categoria errada (não é a medida); (b) GPS como qualificador de agrupamento em `context{}` — explosão de cardinalidade/séries (por isso vai em `attrs{}`, como atributo descritivo).
 - **Status:** aceito
 
 ---
 
 ### ADR-10: Identidade de evento e idempotência (entrega at-least-once)
 
-- **Decisão:** o barramento entrega eventos **at-least-once** (Redpanda com replay). A deduplicação é responsabilidade do **adaptador de saída**, usando uma identidade determinística. A regra de identidade é, em ordem de precedência: (1) um `event_id` da fonte, quando presente (ex.: o `event_id` do Frigate); senão (2) o `blob_ref`, quando presente; senão (3) `source + measure + ts` **acrescido de um discriminador** que torne a chave única (ex.: hash estável do payload restante). O discriminador é necessário porque `source + measure + ts` **não é único por construção** — os eixos são ortogonais (a mesma `source` emite vários `measure`; duas detecções `person` da mesma câmera podem cair no mesmo `ts`), e usar só a tripla causaria **perda silenciosa** de eventos legítimos. Quando propagado, o `event_id` da fonte é preservado em `attrs{}` (não em `context{}`).
-- **Por quê:** replay e reprocessamento (ADR-8: "novo banco = novo consumidor") produzem duplicatas por construção. Sem uma regra de identidade, o histórico do banco de métricas fica inflado e não-reproduzível. A tripla `source + measure + ts` sozinha não identifica o evento (eixos ortogonais → colisões legítimas), daí a precedência por `event_id`/`blob_ref` e o discriminador de payload como último recurso. O `event_id` da fonte vai em `attrs{}` (não em `context{}`) porque é quase-único — altíssima cardinalidade, mesma razão que manda a coordenada GPS para `attrs{}` no ADR-9; colocá-lo em `context{}` (que vira tag) recriaria a explosão de séries. Delegar a dedup ao adaptador mantém o núcleo simples e o modelo canônico livre de detalhe físico.
+- **Decisão:** o barramento entrega eventos **at-least-once** (Redpanda com replay). A deduplicação é responsabilidade do **adaptador de saída**, que deriva uma **identidade determinística** do evento. A regra de identidade, em ordem de precedência, é: (1) um `event_id` da fonte, quando presente; senão (2) o `blob_ref`, quando presente; senão (3) a combinação `source + measure + ts` **mais um discriminador** que a torne única. O discriminador é necessário porque `source + measure + ts` **não é único por construção** (eixos ortogonais: a mesma `source` emite vários `measure`; duas detecções podem cair no mesmo `ts`), e usar só a tripla causaria **perda silenciosa** de eventos legítimos. Quando propagado, o `event_id` da fonte é preservado em `attrs{}` (não em `context{}`).
+- **Por quê:** replay e reprocessamento (ADR-8: "novo banco = novo consumidor") produzem duplicatas por construção. Sem uma regra de identidade, o histórico do banco de métricas fica inflado e não-reproduzível. A precedência por `event_id`/`blob_ref` resolve a maioria dos casos; o discriminador cobre a colisão legítima da tripla. O `event_id` da fonte vai em `attrs{}` (não em `context{}`) porque é quase-único — mesma razão de cardinalidade que manda o GPS para `attrs{}` no ADR-9.
 - **Alternativa descartada:** exigir um `event_id` obrigatório no modelo canônico — acoplaria o domínio a uma semântica de identidade que nem toda fonte fornece.
-- **Fronteira:** decisão de arquitetura de implementação (broker + adaptador), não do modelo conceitual. O core neutro não conhece garantia de entrega nem dedup; por isso esta decisão vive só aqui e não no [00-conceptual-model.md](00-conceptual-model.md).
+- **Fronteira (nível de abstração):** este ADR fixa apenas a *política* de identidade e a responsabilidade (adaptador). O **mecanismo físico** de como o discriminador é calculado e de como a dedup se materializa no banco é detalhe do adaptador de saída — vive no doc de arquitetura, não aqui e nem no [00-conceptual-model.md](00-conceptual-model.md) (o core neutro não conhece garantia de entrega nem dedup).
 - **Status:** aceito
+
+---
+
+### ADR-11: Questões deliberadamente diferidas para a implementação
+
+> Não são furos do modelo conceitual — são consequências conhecidas cuja *solução
+> física* pertence ao adaptador de saída e não precisa (nem deve) ser fixada no plano
+> conceitual. Registradas aqui apenas para não se perderem.
+
+- **Dupla emissão por um fato (`object` + evento de domínio).** Um mesmo fato do mundo
+  pode gerar dois eventos legítimos — ex.: uma `detection` (domínio) e um `object`
+  (infraestrutura do data lake) que compartilham o mesmo `blob_ref`. Isto é
+  **característica do domínio, não defeito**: descrevem aspectos distintos (o que foi
+  reconhecido vs. o que entrou no data lake). O único efeito colateral é **dupla
+  contagem** em agregações ingênuas; a mitigação (escopo/tabela separada, tag
+  reservada, ou convenção de query `kind != object`) é escolha do adaptador,
+  **decisão diferida**. Correlação entre os dois já está garantida pelo `blob_ref`
+  compartilhado (ver §0.5 do modelo conceitual).
+- **Cardinalidade física de `source`.** `source` é primeira-classe por **necessidade de
+  domínio** (ADR-3, Nível 1) — a promoção não é questionada. Resta apenas uma
+  observação de borda: como o adaptador tende a materializar `source` como dimensão de
+  agrupamento (tag), ele é o eixo promovido de maior cardinalidade. Se algum dia uma
+  fonte for identificada por algo quase-único por evento (por-sessão/por-requisição),
+  esse identificador **não é `source`** — vai para `attrs{}`, e o `source` continua
+  sendo o publicador estável. Tratamento físico = **decisão diferida** do adaptador; o
+  modelo permanece intacto.
+- **Status:** aceito (como registro de itens diferidos)
