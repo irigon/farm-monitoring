@@ -45,7 +45,8 @@ credenciais, interfaces de acesso e validação) está em
 
 | # | Documento | Conteúdo |
 |---|---|---|
-| 1 | [Visão Geral](docs/01-overview.md) | O que é e **por que importa** para a agrofloresta |
+| 0 | [Modelo Conceitual](docs/00-conceptual-model.md) | O **modelo de dados neutro** (Evento Canônico) que fundamenta a plataforma |
+| 1 | [Visão Geral](docs/01-overview.md) | O que é e **por que importa** (agrofloresta como vertical de exemplo) |
 | 2 | [Como Começar](docs/02-getting-started.md) | Pré-requisitos, setup, interfaces de acesso, validação |
 | 3 | [Como Usar](docs/03-usage.md) | Dashboards, consultar dados, câmeras, publicar leitura de teste |
 | 4 | [Arquitetura](docs/04-architecture.md) | Infraestrutura física, software e estrutura do repositório |
