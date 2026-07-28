@@ -19,15 +19,16 @@ ESP32 (campo)  →  Gateway LoRa  →  publica MQTT
 Mosquitto (:1883)
         │  subscrito pelo pipeline mqtt-to-redpanda
         ▼
-Redpanda topic: sensors.telemetry
-        │  consumido pelo pipeline sensors-to-influx
+Redpanda topic: events   (Evento Canônico: kind=metric)
+        │  consumido pelo pipeline events-to-influx
         ▼
-InfluxDB 3 Core  →  measurement: sensor_readings
-        │  tags: node_id, sensor_type, location  |  field: value
+InfluxDB 3 Core  →  measurement: events
+        │  tags: kind, source, measure, location  |  field: value
         ▼
 Grafana  →  dashboard "Sensors — Overview"
 ```
 
+> ⚠️ **Contrato não verificado** (upstream do MQTT ainda não integrado — ESP32/LoRa/gateway).
 > A parte à esquerda de "publica MQTT" (hardware de campo) ainda não existe. O que já
 > funciona é: **qualquer coisa que publique nesse formato MQTT** entra no pipeline e
 > chega ao InfluxDB. Veja como testar em [Como Usar](03-usage.md#34-publicar-uma-leitura-de-teste).
@@ -49,9 +50,9 @@ Frigate (:5000)
                  │  payload: {"type":"new|update|end","after":{camera,label,score,...}}
                  ▼
         segue o mesmo caminho do Fluxo 1:
-        Mosquitto → mqtt-to-redpanda → Redpanda (frigate.events)
-                  → frigate-to-influx → InfluxDB
-                 │  measurement: frigate_events (eventos "update" são descartados)
+        Mosquitto → mqtt-to-redpanda → Redpanda (events, kind=detection)
+                  → events-to-influx → InfluxDB
+                 │  measurement: events (eventos "update" são descartados)
 ```
 
 > A cópia dos clips/snapshots do Frigate para o MinIO é feita pelo sidecar
@@ -66,12 +67,12 @@ o MinIO notifica o Redpanda.
 Objeto criado/deletado no MinIO
         │  Bucket Notification → Redpanda topic: minio.events
         ▼
-pipeline minio-to-influx
-        │  extrai bucket, object_key, size, content_type, etag, event, timestamp
+pipeline events-to-influx (canoniza a notificação MinIO crua → kind=object)
+        │  extrai source (path), measure (content_type), blob_ref, size, etag, timestamp
         ▼
-InfluxDB 3 Core  →  measurement: media_objects
-        │  tags: bucket, content_type, source, event
-        │  fields: object_key, size_bytes, etag
+InfluxDB 3 Core  →  measurement: events (kind=object)
+        │  tags: kind, source, measure
+        │  fields: blob_ref, size_bytes, etag, event_name
 ```
 
 Assim, cada objeto de mídia fica indexado no InfluxDB, e o link para o objeto pode ser
@@ -90,7 +91,8 @@ Prometheus (:9090)
 
 ## 5.5 Fluxo 5 — Replicação geográfica (interface esperada)
 
-O servidor remoto ainda não faz parte do repositório (`remote/` é um placeholder).
+> ⚠️ **Contrato não verificado** (replicação remota ainda não integrada).
+> O servidor remoto ainda não faz parte do repositório (`remote/` é um placeholder).
 Quando existir, a réplica usará a **Site Replication** nativa do MinIO:
 
 ```
@@ -112,9 +114,9 @@ vai para o barramento**.
 Você (campo) — grava áudio / tira foto / escreve nota
         │
         ├──▶ CONTEÚDO → MinIO (bucket media/, prefixos audio/ | photos/ | notes/)
-        │        │  Bucket Notification → segue o Fluxo 3 (media_objects)
+        │        │  Bucket Notification → segue o Fluxo 3 (events, kind=object)
         │        ▼
-        │    InfluxDB (media_objects)  — indexa o objeto por si só
+        │    InfluxDB (events, kind=object)  — indexa o objeto por si só
         │
         └──▶ EVENTO LEVE → MQTT topic: annotations/{location}
                  │  Payload: {"ts":..,"location":"talhao-norte","kind":"audio",
@@ -122,27 +124,27 @@ Você (campo) — grava áudio / tira foto / escreve nota
                  │            "object_key":"audio/2026-07-21/ann-001.opus",
                  │            "summary":"pulgao na goiabeira"}
                  ▼
-        Mosquitto → mqtt-to-redpanda → Redpanda (annotations.events)
-                  → annotations-to-influx → InfluxDB
-                 │  measurement: annotations
-                 │  tags: location, kind  |  fields: lat, lon, gps_accuracy, object_key, summary
+        Mosquitto → mqtt-to-redpanda → Redpanda (events, kind=annotation)
+                  → events-to-influx → InfluxDB
+                 │  measurement: events (kind=annotation)
+                 │  tags: kind, source, measure(=tipo), location
+                 │  fields: blob_ref, lat, lon, gps_accuracy, summary
 ```
 
 Pontos de design:
 
-- **Modelo de contexto (Opção 2):** `location` é **um** tipo de contexto (o "onde"),
-  modelado como tag de baixa cardinalidade. Outros tipos (`asset`, `subsystem`, …)
-  podem ser adicionados como novas tags no futuro. O InfluxDB aceita tags novas sem
-  migração; note, porém, que adicionar um novo tipo de contexto exige editar o
-  pipeline `annotations-to-influx.yml` (que hoje monta apenas `location` e `kind`).
+  podem ser adicionados como novas tags no futuro. O consumer `events-to-influx.yml`
+  **itera dinamicamente** as chaves de `context{}` do Evento Canônico e emite cada uma
+  como tag — um novo tipo de contexto entra **sem editar o pipeline**, bastando que o
+  publicador o inclua no payload.
 - **GPS são fields, nunca tags:** coordenadas têm cardinalidade altíssima (quase únicas
   por ponto); como tags, explodiriam o número de séries. `lat`/`lon`/`gps_accuracy` são
   fields **opcionais** e são **omitidos quando ausentes** (nada de sentinela).
 - **`summary`** é um rótulo curto **opcional e fornecido por quem publica**. O sistema
   **nunca** o gera automaticamente (transcrição/descrição seriam específicas de domínio
   e quebrariam a genericidade). O corpo/mídia completo vive sempre no MinIO.
-- **Correlação:** como `annotations`, `sensor_readings`, `frigate_events` e
-  `media_objects` compartilham timestamp (e escopo), é possível cruzar uma anotação
+- **Correlação:** como **todos os eventos vivem no mesmo measurement `events`** e
+  compartilham timestamp (e escopo via `context`), é possível cruzar uma anotação
   com as leituras de sensores e as fotos do mesmo período/área — por janela de tempo
   no Grafana ou por SQL.
 - **Busca por raio (ex.: 30 m de um ponto):** o InfluxDB 3 não tem funções geoespaciais

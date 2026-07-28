@@ -14,10 +14,10 @@
   "templating": {
     "list": [
       {
-        "name": "node_id",
+        "name": "source",
         "type": "query",
         "datasource": { "type": "influxdb", "uid": "influxdb" },
-        "query": "SELECT DISTINCT node_id FROM sensor_readings",
+        "query": "SELECT DISTINCT source FROM events WHERE kind = 'metric'",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -48,7 +48,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT time, node_id, value FROM sensor_readings WHERE sensor_type = 'temp' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'temp' AND $__timeFilter(time) ORDER BY time",
           "format": "table"
         }
       ],
@@ -79,7 +79,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT time, node_id, value FROM sensor_readings WHERE sensor_type = 'humidity' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'humidity' AND $__timeFilter(time) ORDER BY time",
           "format": "table"
         }
       ],
@@ -110,7 +110,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT time, node_id, value FROM sensor_readings WHERE sensor_type = 'soil_moisture' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'soil_moisture' AND $__timeFilter(time) ORDER BY time",
           "format": "table"
         }
       ],
@@ -141,7 +141,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT time, node_id, value FROM sensor_readings WHERE sensor_type = 'lux' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'lux' AND $__timeFilter(time) ORDER BY time",
           "format": "table"
         }
       ],
@@ -184,7 +184,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT time, node_id, value FROM sensor_readings WHERE sensor_type = 'ph' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'ph' AND $__timeFilter(time) ORDER BY time",
           "format": "table"
         }
       ],
@@ -206,7 +206,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT node_id, sensor_type, location, value, time FROM sensor_readings WHERE $__timeFilter(time) ORDER BY time DESC LIMIT 50",
+          "rawSql": "SELECT source, measure, location, value, time FROM events WHERE kind = 'metric' AND $__timeFilter(time) ORDER BY time DESC LIMIT 50",
           "format": "table"
         }
       ],

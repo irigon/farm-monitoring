@@ -1,0 +1,57 @@
+input:
+  redpanda:
+    seed_brokers: ["redpanda:9092"]
+    topics: ["events","minio.events"]
+    consumer_group: "influx-events-writer"
+pipeline:
+  processors:
+    - mapping: |
+        let is_minio = meta("kafka_topic") == "minio.events"
+        let record = this.Records.index(0)
+        let raw_key = this.Key.or($record.s3.object.key.or("unknown"))
+        let object_key = $raw_key.re_replace_all("^[^/]+/", "")
+        let bucket = $record.s3.bucket.name.or("media")
+        let minio_ts_ms = ($record.eventTime.or("").parse_timestamp("2006-01-02T15:04:05.000Z").catch(now()).ts_unix() * 1000).floor()
+        let src = $object_key.re_replace_all("^([^/]+).*", "$1").or("unknown")
+        root = if $is_minio {
+          {
+            "ts": $minio_ts_ms,
+            "kind": "object",
+            "source": $src,
+            "measure": $record.s3.object.contentType.or("application/octet-stream"),
+            "value": null,
+            "blob_ref": "s3://" + $bucket + "/" + $object_key,
+            "context": {},
+            "attrs": {
+              "event_name": $record.eventName.or(this.EventName.or("unknown")),
+              "size_bytes": $record.s3.object.size.or(0),
+              "etag": $record.s3.object.eTag.or("")
+            }
+          }
+        } else { this }
+    - mapping: |
+        let s_kind = this.kind.or("unknown").string().re_replace_all("[, =]", "_")
+        let s_source = this.source.or("unknown").string().re_replace_all("[, =]", "_")
+        let s_measure = this.measure.or("unknown").string().re_replace_all("[, =]", "_")
+        let base_tags = "kind=" + $s_kind + ",source=" + $s_source + ",measure=" + $s_measure
+        let ctx_tags = this.context.or({}).key_values().map_each(v -> v.key.re_replace_all("[, =]", "_") + "=" + v.value.string().re_replace_all("[, =]", "_")).join(",")
+        let tags = if $ctx_tags != "" { $base_tags + "," + $ctx_tags } else { $base_tags }
+        let value_field = if this.value != null { ["value=" + this.value.string()] } else { [] }
+        let blob_field = if this.blob_ref != null { ["blob_ref=" + this.blob_ref.string().quote()] } else { [] }
+        let attr_fields = this.attrs.or({}).key_values().map_each(v -> if v.value.type() == "number" { v.key.re_replace_all("[, =]", "_") + "=" + v.value.string() } else { v.key.re_replace_all("[, =]", "_") + "=" + v.value.string().quote() })
+        let all_fields = $value_field.concat($blob_field).concat($attr_fields)
+        let fields = if $all_fields.length() > 0 { $all_fields.join(",") } else { "present=true" }
+        let ts_ns = (this.ts.or(now().ts_unix() * 1000) * 1000000).floor()
+        root = "events," + $tags + " " + $fields + " " + $ts_ns.string()
+output:
+  http_client:
+    url: "http://influxdb:8181/api/v2/write?bucket=${INFLUXDB_DATABASE}&precision=ns"
+    verb: POST
+    headers:
+      Content-Type: "text/plain; charset=utf-8"
+    batching:
+      count: 100
+      period: 1s
+      processors:
+        - archive:
+            format: lines

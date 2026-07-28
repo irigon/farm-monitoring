@@ -16,7 +16,7 @@ echo "=== Farm Monitoring Setup ==="
 echo ""
 echo "--- Creating Redpanda topics ---"
 
-for topic in sensors.telemetry frigate.events minio.events annotations.events; do
+for topic in events minio.events; do
   echo "Creating topic: $topic"
   rpk topic create "$topic" \
     --brokers "$REDPANDA_BROKER" \

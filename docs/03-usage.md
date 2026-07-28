@@ -42,28 +42,28 @@ O InfluxDB 3 Core **não tem UI web** — as consultas são feitas via API HTTP 
 Sempre inclua `format=json`.
 
 ```bash
-# Últimas 10 leituras de sensores
+# Últimas 10 leituras de sensores (kind=metric)
 curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'db=farm' \
-  --data-urlencode 'q=SELECT * FROM sensor_readings ORDER BY time DESC LIMIT 10' \
+  --data-urlencode "q=SELECT * FROM events WHERE kind='metric' ORDER BY time DESC LIMIT 10" \
   --data-urlencode 'format=json' | python3 -m json.tool
 
 # Média de umidade do solo por nó nas últimas 24h
 curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'db=farm' \
-  --data-urlencode "q=SELECT node_id, AVG(value) FROM sensor_readings WHERE sensor_type='soil_moisture' AND time > now() - INTERVAL '24 hours' GROUP BY node_id" \
+  --data-urlencode "q=SELECT source, AVG(value) FROM events WHERE kind='metric' AND measure='soil_moisture' AND time > now() - INTERVAL '24 hours' GROUP BY source" \
   --data-urlencode 'format=json' | python3 -m json.tool
 
 # Eventos de detecção recentes do Frigate
 curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'db=farm' \
-  --data-urlencode 'q=SELECT * FROM frigate_events ORDER BY time DESC LIMIT 10' \
+  --data-urlencode "q=SELECT * FROM events WHERE kind='detection' ORDER BY time DESC LIMIT 10" \
   --data-urlencode 'format=json' | python3 -m json.tool
 
 # Mídia arquivada mais recente (metadados)
 curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'db=farm' \
-  --data-urlencode 'q=SELECT * FROM media_objects ORDER BY time DESC LIMIT 10' \
+  --data-urlencode "q=SELECT * FROM events WHERE kind='object' ORDER BY time DESC LIMIT 10" \
   --data-urlencode 'format=json' | python3 -m json.tool
 
 # Listar as tabelas (measurements) disponíveis
@@ -73,8 +73,9 @@ curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'format=json'
 ```
 
-Os measurements disponíveis (`sensor_readings`, `frigate_events`, `media_objects`,
-etc.) estão descritos em [Componentes → Schemas](06-components.md).
+Todos os eventos vivem no **measurement único `events`**, discriminados pela tag `kind`
+(`metric`, `detection`, `annotation`, `object`). O schema está descrito em
+[Componentes → Schema de `events`](06-components.md).
 
 ## 3.4 Publicar uma leitura de teste
 
@@ -90,14 +91,14 @@ docker run --rm --network farm-monitoring_monitoring eclipse-mosquitto:2 \
   -m '{"node_id":"test","type":"humidity","value":65.2,"ts":'$(date +%s)'}'
 
 # 2. (Opcional) Confirmar que chegou ao topic no Redpanda
-docker exec redpanda rpk topic consume sensors.telemetry \
+docker exec redpanda rpk topic consume events \
   --brokers localhost:9092 --num 1
 
 # 3. Aguardar o batching (~1s) e consultar o InfluxDB
 sleep 2
 curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'db=farm' \
-  --data-urlencode 'q=SELECT * FROM sensor_readings ORDER BY time DESC LIMIT 3' \
+  --data-urlencode "q=SELECT * FROM events WHERE kind='metric' ORDER BY time DESC LIMIT 3" \
   --data-urlencode 'format=json' | python3 -m json.tool
 ```
 
@@ -119,5 +120,5 @@ Acesse o **MinIO Console** em **http://localhost:9001** e faça login com
 - **`backups`** — backups de configuração.
 
 Cada objeto criado dispara uma notificação que grava seus metadados no InfluxDB
-(measurement `media_objects`), então você também encontra a mídia consultando o
+(measurement `events`, `kind='object'`), então você também encontra a mídia consultando o
 InfluxDB (seção 3.3).

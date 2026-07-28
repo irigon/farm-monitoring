@@ -43,6 +43,15 @@ A regra que une as duas:
 > conteúdo pesado nunca entra no banco de métricas — só o fato e, quando aplicável, o
 > *ponteiro* para o conteúdo.
 
+> **`value` é estritamente numérico e agregável.** Nenhum evento usa `value` para
+> texto. Um estado *categórico* (`state`: aberto/fechado, ligado/desligado) é
+> expresso pelo eixo `measure`, e seu `value` carrega a **codificação numérica** do
+> estado (`0`/`1`, ou o percentual de uma válvula). Texto descritivo, quando existir,
+> vai em `attrs{}`. Assim a invariante acima vale **sem exceção**: todo evento tem
+> sempre um `value` numérico ou um `blob_ref` — e `value`, sempre numérico, permanece
+> agregável para qualquer `kind`. (A codificação concreta de cada estado é escolha da
+> vertical/adaptador, não do modelo.)
+
 Essa separação é o coração do sistema: **dados rápidos são consultados como série
 temporal; dados lentos são referenciados, não copiados.**
 
@@ -54,7 +63,7 @@ Toda fonte de dado — sensor, câmera, atuador, observação humana, objeto no 
 ```jsonc
 {
   "ts":       1709827200000,  // quando o fato aconteceu (event time, epoch ms)
-  "kind":     "reading",      // a FORMA do dado (discriminador fixo)
+  "kind":     "metric",       // a FORMA do dado (discriminador fixo)
   "source":   "sensor-n03",   // QUEM/o quê gerou (proveniência)
   "measure":  "luminosity",   // O QUE está sendo medido/detectado
   "value":    843,            // opcional: a grandeza (agregável)
@@ -64,7 +73,7 @@ Toda fonte de dado — sensor, câmera, atuador, observação humana, objeto no 
     "zone":     "norte"
   },
   "attrs":    {               // atributos descritivos do fato (alta cardinalidade)
-    "gps_accuracy": 4.5       //   ex.: precisão, score, bateria — mapeados como field
+    "gps_accuracy": 4.5       //   ex.: precisão, score, bateria — descritores do fato
   }
 }
 ```
@@ -74,7 +83,7 @@ Toda fonte de dado — sensor, câmera, atuador, observação humana, objeto no 
 | `ts` | Instante (event time) em que o fato ocorreu; epoch em ms | — | Sim |
 | `kind` | A **forma** do dado (ver §0.5) | **Fixo** (enum) | Sim |
 | `source` | A **proveniência** — identificador da fonte | Aberto | Sim |
-| `measure` | O **que** é medido/detectado (ex.: `temperature`, `person`) | Aberto | Obrigatório p/ `reading`/`detection`/`state`; opcional p/ `object` |
+| `measure` | O **que** é medido/detectado (ex.: `temperature`, `person`) | Aberto | Obrigatório p/ `metric`/`detection`/`state`; opcional p/ `object` |
 | `value` | A grandeza numérica; agregável (avg, max, sum) | — | Opcional* |
 | `blob_ref` | Ponteiro para o conteúdo no data lake | — | Opcional* |
 | `context` | Mapa aberto de qualificadores de baixa cardinalidade | Aberto | Opcional |
@@ -102,7 +111,7 @@ Consultas que a ortogonalidade torna possíveis, sem conhecimento prévio dos va
 - Tudo que veio de um nó específico → filtrar por `source = sensor-n03`.
 
 > **Ressalva sobre `measure` e `object`.** `measure` é obrigatório para
-> `reading`/`detection`/`state`, mas *opcional* para `object` (ver §0.3) — um evento de
+> `metric`/`detection`/`state`, mas *opcional* para `object` (ver §0.3) — um evento de
 > ciclo de vida de blob pode não ter uma grandeza/classe associada. Logo, filtros por
 > `measure` naturalmente ignoram parte dos `object`. Isso é coerente com a regra do
 > §0.5 (`kind != object` em consultas de domínio) e não afeta os demais `kind`, onde
@@ -122,14 +131,14 @@ valores:
 
 | `kind` | Definição — a *forma* | Engloba |
 |---|---|---|
-| **`reading`** | Medida numérica escalar num instante | umidade, vento, chuva (mm), temperatura, pressão, altura, luminosidade, CO₂ — **todo sensor** |
+| **`metric`** | Medida numérica escalar num instante | umidade, vento, chuva (mm), temperatura, pressão, altura, luminosidade, CO₂ — **todo sensor** |
 | **`detection`** | Algo foi reconhecido/classificado, com confiança; tipicamente com blob | câmera detecta pessoa/carro/animal; sensor de presença que dispara |
-| **`state`** | Mudança de estado discreto de um dispositivo | atuador ligou/desligou, portão abriu/fechou, válvula 30%→70% |
+| **`state`** | Mudança de estado discreto de um dispositivo; o estado é um `measure`, sua codificação numérica é o `value` | atuador ligou/desligou, portão abriu/fechou, válvula 30%→70% |
 | **`annotation`** | Observação humana, aponta para mídia no data lake | áudio ditado, foto, nota de texto |
 | **`object`** | Um blob apareceu/sumiu no data lake | notificação de criação/remoção de objeto |
 
 **Critério de fixação.** `kind` é fixo porque **determina como o sistema trata o dado**:
-um `reading` vira gráfico de linha e sofre downsample; um `object` gera um ponteiro; um
+um `metric` vira gráfico de linha e sofre downsample; um `object` gera um ponteiro; um
 `detection` casa evento + blob. Um `kind` novo é *código novo* (um jeito novo de
 processar). Já `source`/`measure` novos são *dado novo* — o pipeline nem percebe. Essa é
 a linha divisória: **`kind` fixo porque muda comportamento; o resto aberto porque só
@@ -160,8 +169,8 @@ A mesma `source` pode emitir vários `measure`, e o mesmo `measure` pode vir de 
 
 | `source` (quem) | `measure` (o quê) | `kind` |
 |---|---|---|
-| `sensor-n03` | `temperature` | `reading` |
-| `sensor-n03` | `humidity` | `reading` |
+| `sensor-n03` | `temperature` | `metric` |
+| `sensor-n03` | `humidity` | `metric` |
 | `camera-entrada` | `person` | `detection` |
 | `camera-entrada` | `car` | `detection` |
 | `camera-garagem` | `person` | `detection` |
@@ -176,14 +185,14 @@ A mesma `source` pode emitir vários `measure`, e o mesmo `measure` pode vir de 
 > pela mesma regra da coordenada — *"eu agruparia por isto?"*:
 >
 > - **`context{}`** — qualificador de agrupamento, baixa cardinalidade (`GROUP BY zone`).
->   Sem migração: basta publicar a chave; o adaptador a mapeia como tag.
+>   Sem migração: basta publicar a chave; o adaptador cuida de materializá-la.
 > - **`attrs{}`** — descritor do fato, alta cardinalidade (`lat`, `score`, `battery`,
->   `rssi`, `size_bytes`). Mapeado como field. É a generalização canônica dos campos que
+>   `rssi`, `size_bytes`). É a generalização canônica dos campos que
 >   hoje vivem despadronizados (`score` em `frigate_events`, `etag` em `media_objects`…).
 
 > **Câmeras:** o tipo detectado (`person`, `car`, `dog`…) é um `measure`, exatamente
 > como `temperature` é o `measure` de um sensor. Isso dá de graça consultas genéricas —
-> `kind='detection' AND measure='person'` é análogo a `kind='reading' AND
+> `kind='detection' AND measure='person'` é análogo a `kind='metric' AND
 > measure='temperature'`. A lista de rótulos é **aberta**: o detector emite o que
 > reconhece e o sistema aceita sem conhecê-lo de antemão. Reagrupar rótulos finos em
 > superclasses (`dog`→`animal`) é decisão de *consulta/apresentação*, **não** de
@@ -193,7 +202,7 @@ A mesma `source` pode emitir vários `measure`, e o mesmo `measure` pode vir de 
 
 | Measurement atual | `kind` | `source` (hoje) | `measure` (hoje) |
 |---|---|---|---|
-| `sensor_readings` | `reading` | `node_id` | `sensor_type` |
+| `sensor_readings` | `metric` | `node_id` | `sensor_type` |
 | `frigate_events` | `detection` | `camera` | `label` |
 | `annotations` | `annotation` | (publisher) | `kind` do payload → **renomeado p/ `measure`** (o `kind` canônico é sempre `annotation`) |
 | `media_objects` | `object` | `bucket`/`source` do path | `content_type` |
@@ -262,27 +271,26 @@ do modelo.
 precisa".** Há dois "ondes", com tratamentos diferentes:
 
 - **Lugar nomeado** (`location=estufa-2`, `zone=norte`): baixa cardinalidade, é dimensão
-  natural de agrupamento → vai para `context{}` (mapeado como tag pelo adaptador).
+  natural de agrupamento → vai para `context{}`.
 - **Coordenada precisa** (`lat`/`lon`/`gps_accuracy`): **não é `value`** (não é a grandeza
-  medida) **nem** tag (cardinalidade altíssima, quase única por ponto, quebraria a
-  indexação) **nem `context{}`** (que é eixo de *agrupamento* de baixa cardinalidade —
-  ninguém agrupa por coordenada exata; aninhá-la não muda isso). É um **atributo
-  descritivo opcional**, que vive no contêiner `attrs{}` do evento — lido junto com ele,
-  mas raramente agrupado por ele. Incluído **só quando faz sentido** (ex.: foto/áudio em
-  campo) e **omitido** quando ausente ou irrelevante (ex.: sensor fixo, cuja posição
-  pode ser registrada uma única vez fora do fluxo de eventos). No mapa físico o adaptador
-  o grava como *field*. Busca por raio é feita via *bounding-box* + Haversine na query,
-  não por indexação.
+  medida) **nem** qualificador de agrupamento (cardinalidade altíssima, quase única por
+  ponto — ninguém agrupa por coordenada exata, e aninhá-la em `context{}` não muda
+  isso). É um **atributo descritivo opcional**, que vive no contêiner `attrs{}` do
+  evento — lido junto com ele, mas raramente agrupado por ele. Incluído **só quando
+  faz sentido** (ex.: foto/áudio em campo) e **omitido** quando ausente ou irrelevante
+  (ex.: sensor fixo, cuja posição pode ser registrada uma única vez fora do fluxo de
+  eventos). Como o adaptador grava a coordenada e implementa busca por raio é detalhe
+  do adaptador (ver §0.7), não do modelo.
 
 ## 0.9 Glossário
 
 - **Evento** — um fato leve: "algo aconteceu em `t`", com `value` e/ou `blob_ref`.
 - **Blob** — conteúdo bruto, pesado e imutável, guardado no data lake.
-- **`kind`** — a *forma* do dado (fixo): `reading`, `detection`, `state`, `annotation`, `object`.
+- **`kind`** — a *forma* do dado (fixo): `metric`, `detection`, `state`, `annotation`, `object`.
 - **`source`** — a *proveniência* (aberto): quem/o quê gerou o evento.
 - **`measure`** — a *semântica* (aberto): o que está sendo medido/detectado.
-- **`context{}`** — qualificadores de baixa cardinalidade; eixo de agrupamento (→ tag).
-- **`attrs{}`** — atributos descritivos do fato, alta cardinalidade (→ field): GPS, score, bateria…
+- **`context{}`** — qualificadores de baixa cardinalidade; eixo de agrupamento.
+- **`attrs{}`** — atributos descritivos do fato, alta cardinalidade: GPS, score, bateria…
 - **Adaptador** — componente de borda que traduz um dialeto específico ↔ o Evento Canônico.
 - **Fronteira do domínio ("port")** — o barramento de eventos que carrega o Evento
   Canônico; separa adaptadores de entrada dos de saída. (Vocabulário do padrão

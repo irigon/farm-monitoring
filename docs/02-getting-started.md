@@ -90,8 +90,7 @@ curl -f http://localhost:9000/minio/health/live  # MinIO → 200
 
 # 3. Pipelines do Redpanda Connect ativos
 curl -s http://localhost:4195/streams | python3 -m json.tool
-#    Esperado: "mqtt-to-redpanda", "sensors-to-influx",
-#    "frigate-to-influx", "minio-to-influx" com "active": true
+#    Esperado: "mqtt-to-redpanda", "events-to-influx" com "active": true
 ```
 
 Para uma **validação real do fluxo** (publicar uma leitura e vê-la chegar ao
