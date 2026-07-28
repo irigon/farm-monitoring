@@ -9,7 +9,7 @@
 >
 > **Vocabulário mínimo** (definido em detalhe no [modelo conceitual](00-conceptual-model.md)):
 > o **Evento Canônico** tem um `ts` (event time) mais oito campos de conteúdo. `kind` =
-> a *forma* do dado (enum fechado: `reading`, `detection`, `state`, `annotation`,
+> a *forma* do dado (enum fechado: `metric`, `detection`, `state`, `annotation`,
 > `object`); `source` = *quem/o quê* gerou (proveniência); `measure` = *o que* está sendo
 > medido/detectado (semântica); `value` = a grandeza **numérica** (agregável; estado
 > categórico é expresso via `measure`, ver ADR-5); `blob_ref` = ponteiro
@@ -18,7 +18,7 @@
 > assumem esse vocabulário.
 >
 > Dois exemplos concretos para fixar a ideia:
-> - **Leitura de sensor:** `kind=reading`, `source=sensor-n03`, `measure=temperature`,
+> - **Leitura de sensor:** `kind=metric`, `source=sensor-n03`, `measure=temperature`,
 >   `value=28.5`, `context={location: estufa-2}`. (Um sensor mediu 28,5 na estufa 2.)
 > - **Detecção de câmera:** `kind=detection`, `source=camera-entrada`, `measure=person`,
 >   `blob_ref=s3://media/clips/…`, `context={zone: garagem}`. (Uma câmera reconheceu
@@ -74,9 +74,9 @@
 
 ### ADR-5: `kind` fixo com 5 valores
 
-- **Decisão:** `kind` é um enum fechado: `reading`, `detection`, `state`, `annotation`, `object`.
+- **Decisão:** `kind` é um enum fechado: `metric`, `detection`, `state`, `annotation`, `object`.
 - **Por quê:** critério de fixação = *"muda comportamento, não só valor"*. Um `kind` novo é código novo (jeito novo de processar); `source`/`measure` novos são só dado. `state` inclui estado reportado por atuadores (comando/controle fica fora de escopo).
-- **Alternativa descartada:** (a) `kind` aberto absorvendo tipos de dispositivo/medida — recairia em proveniência; (b) fundir `detection`→`reading` (4 valores) — descartado por `detection` ter semântica própria (blob + "vale olhar"), mas registrado como opção defensável.
+- **Alternativa descartada:** (a) `kind` aberto absorvendo tipos de dispositivo/medida — recairia em proveniência; (b) fundir `detection`→`metric` (4 valores) — descartado por `detection` ter semântica própria (blob + "vale olhar"), mas registrado como opção defensável.
 - **Status:** aceito
 
 ---
