@@ -22,6 +22,7 @@
 > | ADR-8 | YAGNI da abstração de banco | aceito |
 > | ADR-9 | Localização — lugar nomeado vs. coordenada precisa | aceito |
 > | ADR-10 | Identidade de evento e idempotência | aceito |
+> | ADR-11 | Emissão de eventos de mídia — publisher + `object` do storage + path por convenção | aceito |
 >
 > Questões conhecidas ainda **não decididas** ficam na seção [Questões em Aberto](#questões-em-aberto-diferidas) ao fim — fora da numeração de ADRs, pois não são decisões.
 >
@@ -147,6 +148,42 @@
 - **Alternativa descartada:** exigir um `event_id` obrigatório no modelo canônico — acoplaria o domínio a uma semântica de identidade que nem toda fonte fornece.
 - **Consequências:** cada adaptador de saída carrega a complexidade de derivar identidade e deduplicar — não é "de graça". Onde a fonte não fornece `event_id` nem `blob_ref`, o adaptador **precisa** de um discriminador real para a tripla `source+measure+ts`; se não houver, resta escolher entre risco de **perda silenciosa** (dois eventos legítimos idênticos colapsam) ou de **duplicata no replay**. Esse trade-off é real e não eliminado por este ADR — apenas localizado no adaptador. Recomendação prática: fontes que possam gerar um `event_id` (mesmo um contador monotônico por nó) tornam a dedup determinística e o replay seguro.
 - **Fronteira (nível de abstração):** este ADR fixa apenas a *política* de identidade e a responsabilidade (adaptador). O **mecanismo físico** de como o discriminador é calculado e de como a dedup se materializa no banco é detalhe do adaptador de saída — vive no doc de arquitetura, não aqui e nem no [00-conceptual-model.md](00-conceptual-model.md) (o core neutro não conhece garantia de entrega nem dedup).
+- **Status:** aceito
+
+---
+
+### ADR-11: Emissão de eventos de mídia — publisher emite o evento de domínio; `object` vem do storage; path por convenção
+
+- **Decisão:** quando um fato do mundo produz um blob, o **publisher emite no máximo um evento de domínio** (`detection`/`annotation`) já contendo o `blob_ref`; ele **não** emite o evento `object` — esse é gerado pelo **storage** (bucket notification do MinIO). O `object_key` é **composto por uma convenção conhecida** a partir de dados que o gerador já possui (ex.: `{tipo}/{data}/{device_id}-{ts}.{ext}`), **nunca hardcoded** no dispositivo e **sem round-trip** de upload. O `blob_ref` é a URI neutra `{esquema}://{bucket}/{object_key}` (ver §0.2). A ligação `object` ↔ domínio é feita **exclusivamente pelo `blob_ref` compartilhado** (realiza a Q1 e §0.5).
+- **Por quê:** (1) o `object` já é gerado "de graça" pelo storage — o device também emiti-lo duplicaria o mesmo fato de infraestrutura e gastaria transmissões (crítico em IoT LoRa/bateria/solar). (2) A correlação por `blob_ref` já era decisão registrada (Q1); nada novo é inventado. (3) Como o path é composto de dados que o gerador já tem, ele é conhecido *antes* do upload — esperar o retorno do upload adicionaria round-trip e um estado de erro sem informação nova. (4) Convenção (não hardcode) mantém o firmware/app desacoplado da organização interna do bucket (§0.2/§0.7). (5) Sensores puros seguem emitindo um único `metric`; a questão não se aplica a eles.
+- **Exemplo concreto (uma câmera detecta uma pessoa):** um único fato produz **dois** eventos, de duas fontes, ligados pelo mesmo `blob_ref`.
+    - Evento de domínio, emitido pelo **Frigate** (`detection`):
+      ```jsonc
+      {
+        "ts": 1709827200000, "kind": "detection",
+        "source": "camera-entrada", "measure": "person", "value": null,
+        "blob_ref": "s3://media/clips/2026-07-28/camera-entrada-1709827200.mp4",
+        "context": { "zone": "garagem" },
+        "attrs": { "score": 0.87, "event_id": "1709827200.123-abc" }
+      }
+      ```
+    - Evento de infraestrutura, emitido pelo **MinIO** (`object`), com o **mesmo `blob_ref`**:
+      ```jsonc
+      {
+        "ts": 1709827200450, "kind": "object",
+        "source": "media", "measure": "video/mp4", "value": null,
+        "blob_ref": "s3://media/clips/2026-07-28/camera-entrada-1709827200.mp4",
+        "context": {},
+        "attrs": { "size_bytes": 481239, "etag": "9f8c…", "event": "s3:ObjectCreated:Put" }
+      }
+      ```
+    - **`object_key`** = `clips/2026-07-28/camera-entrada-1709827200.mp4` (path relativo ao bucket). **`blob_ref`** = a URI neutra completa `s3://media/{object_key}`. É a igualdade do `blob_ref` que correlaciona os dois eventos, sem correlação mágica.
+- **Alternativas descartadas:**
+    - (a) **Publisher emite ambos** (`object` + domínio) — duplica o `object` que o MinIO já gera; dobra transmissões pelo pior motivo.
+    - (b) **Sistema deriva o evento de domínio do `object`** — exigiria o core reinterpretar a semântica a partir do path; viola a neutralidade (§0.7) e "o adaptador nunca reinterpreta o rótulo" (§0.6).
+    - (c) **Path retornado pelo upload (round-trip)** — adiciona complexidade e um estado de erro sem melhoria, já que a convenção torna o path conhecido de antemão.
+    - (d) **Path hardcoded no dispositivo** — acopla o firmware à organização interna do bucket; reorganizar prefixos exigiria reprogramar dispositivos de campo.
+- **Consequências:** a convenção de nomes vira um **artefato versionado** no repositório (contrato único), implementado por cada gerador. Um blob pode existir (via `object`) sem o evento de domínio correspondente, ou vice-versa — a janela de inconsistência da ADR-2 permanece, mitigada pela correlação por `blob_ref`. A dedup do `object` gerado pelo MinIO segue a ADR-10.
 - **Status:** aceito
 
 ---

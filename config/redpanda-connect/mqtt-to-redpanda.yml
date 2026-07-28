@@ -1,44 +1,62 @@
-# Pipeline: MQTT → Redpanda
-# Subscribes to sensor and frigate MQTT topics, publishes to Redpanda topics.
-
 input:
   mqtt:
-    urls:
-      - "tcp://mosquitto:1883"
+    urls: ["tcp://mosquitto:1883"]
     client_id: "rp-connect-mqtt-bridge"
-    topics:
-      - "sensors/#"
-      - "frigate/events"
-      - "annotations/#"
+    topics: ["sensors/#","frigate/events","annotations/#"]
     qos: 1
     clean_session: true
     user: "${MQTT_USER}"
     password: "${MQTT_PASSWORD}"
-    connect_timeout: 30s
-    auto_replay_nacks: true
-
 pipeline:
   processors:
     - switch:
-        # Route frigate events to their own topic
         - check: meta("mqtt_topic").has_prefix("frigate/")
           processors:
             - mapping: |
-                meta output_topic = "frigate.events"
-        # Route human annotations (audio/photo/text observations) to their own topic
+                let event_type = this.type.or("unknown")
+                let after = this.after
+                let ts_s = $after.end_time.or($after.start_time.or(now().ts_unix()))
+                root = if $event_type == "update" { deleted() } else {
+                  {
+                    "ts": ($ts_s * 1000).floor(),
+                    "kind": "detection",
+                    "source": $after.camera.or("unknown"),
+                    "measure": $after.label.or("unknown"),
+                    "value": null,
+                    "blob_ref": null,
+                    "context": {"zone": $after.current_zones.or($after.zones.or([])).join(",")},
+                    "attrs": {"event_id": $after.id.or("unknown"), "event_type": $event_type, "score": $after.top_score.or($after.score.or(0)), "has_clip": $after.has_clip.or(false), "has_snapshot": $after.has_snapshot.or(false)}
+                  }
+                }
         - check: meta("mqtt_topic").has_prefix("annotations/")
           processors:
             - mapping: |
-                meta output_topic = "annotations.events"
-        # Everything else goes to sensors.telemetry
+                let ts_s = this.ts.or(now().ts_unix())
+                let object_key = this.object_key.or("")
+                root.ts = ($ts_s * 1000).floor()
+                root.kind = "annotation"
+                root.source = this.device_id.or("annotations-app")
+                root.measure = this.kind.or("unknown")
+                root.value = null
+                root.blob_ref = if $object_key != "" { "s3://media/" + $object_key } else { null }
+                root.context = {"location": this.location.or("default")}
+                root.attrs = {"summary": this.summary.or("")}
+                root.attrs.lat = if this.lat != null { this.lat }
+                root.attrs.lon = if this.lon != null { this.lon }
+                root.attrs.gps_accuracy = if this.gps_accuracy != null { this.gps_accuracy }
         - processors:
             - mapping: |
-                meta output_topic = "sensors.telemetry"
-
+                let ts_s = this.ts.or(now().ts_unix())
+                root.ts = ($ts_s * 1000).floor()
+                root.kind = "metric"
+                root.source = this.node_id.or("unknown")
+                root.measure = this.type.or("unknown")
+                root.value = this.value
+                root.blob_ref = null
+                root.context = {"location": this.location.or("default")}
+                root.attrs = {}
 output:
   redpanda:
-    seed_brokers:
-      - "redpanda:9092"
-    topic: "${! meta(\"output_topic\") }"
-    key: "${! meta(\"mqtt_topic\") }"
-    max_in_flight: 10
+    seed_brokers: ["redpanda:9092"]
+    topic: "events"
+    key: '${! json("source") }'

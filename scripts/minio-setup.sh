@@ -37,8 +37,8 @@ mc admin info "$MINIO_ALIAS" > /dev/null 2>&1 || {
 
 # -- Create buckets ------------------------------------------------------------
 #
-# Path convention inside the "media" bucket. The minio-to-influx pipeline derives
-# the "source" tag of media_objects from the FIRST path segment, so keep prefixes
+# Path convention inside the "media" bucket. The events-to-influx pipeline derives
+# the canonical "source" tag (kind=object) from the FIRST path segment, so keep prefixes
 # consistent:
 #   clips/      → Frigate video clips
 #   snapshots/  → Frigate detection snapshots

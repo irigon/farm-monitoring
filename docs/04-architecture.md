@@ -37,18 +37,23 @@ estrutura de diretórios do repositório.
 │                   │  Gateway LoRa      │  ESP32 + LoRa RX + WiFi direcional   │
 │                   │  (Ponto Elevado)   │  Solar + bateria                     │
 │                   └────────┬───────────┘                                      │
-│                            │ WiFi direcional (~1 km)                          │
-│   [Cam IP 1] ──RTSP──────┐ │  [Cam IP 2] ──RTSP──┐                           │
-└───────────────────────────┼┼──────────────────────┼────────────────────────────┘
-                            ▼▼                      │
-┌───────────────────────────────────────────────────────────────────────────────┐
-│                  SERVIDOR PRINCIPAL (8+ GB, Linux, 24/7)                       │
-│   O gateway LoRa publica MQTT no Mosquitto via WiFi.                           │
-│   As câmeras IP enviam RTSP diretamente ao Frigate via rede local.            │
-└───────────────────────────┬───────────────────────────────────────────────────┘
-                            │ MinIO Site Replication (internet/VPN)
-                            ▼
-┌───────────────────────────────────────────────────────────────────────────────┐
+│                            │ MQTT via WiFi direcional (~1 km)                 │
+└────────────────────────────┼──────────────────────────────────────────────────┘
+                             │
+┌────────────────────────────┼──────────── Sede da propriedade (rede local) ────┐
+│                            ▼                                                   │
+│   [Cam IP 1] ──RTSP──┐                                                         │
+│   [Cam IP 2] ──RTSP──┤  (RTSP pela rede local — não cruza o link WiFi)         │
+│                      ▼                                                         │
+│   ┌───────────────────────────────────────────────────────────────────────┐  │
+│   │            SERVIDOR PRINCIPAL (8+ GB, Linux, 24/7)                      │  │
+│   │  • Gateway LoRa publica MQTT no Mosquitto (via WiFi direcional).        │  │
+│   │  • Câmeras IP enviam RTSP ao Frigate (rede local da sede).              │  │
+│   └───────────────────────────────────┬───────────────────────────────────┘  │
+└───────────────────────────────────────┼──────────────────────────────────────┘
+                                         │ MinIO Site Replication (internet/VPN)
+                                         ▼
+┌───────────────────────────── Local geográfico remoto ────────────────────────┐
 │         SERVIDOR REMOTO (4–8 GB, Linux, 24/7) — MinIO Réplica                  │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -129,6 +134,28 @@ Todos os serviços rodam como containers Docker, orquestrados via Docker Compose
 **RAM total estimada: ~3.7–4.4 GB** (de 8 GB → margem de ~3.6–4.3 GB). Detalhes de
 consumo em [Operações](07-operations.md#71-consumo-de-recursos).
 
+> **Nota de escopo — `kind=state`:** O inventário acima cobre `kind` de tipo `metric`,
+> `detection`, `object` e `annotation`. O `kind=state` (comando/estado de **atuadores**,
+> ex.: acionar irrigação) **não tem implementação nesta fase** — está deferido para
+> quando houver hardware atuador integrado. O modelo canônico já o reserva (ver
+> [Modelo Conceitual §0.5](00-conceptual-model.md#05-kind-o-discriminador-fixo)).
+
+### Princípio de emissão de eventos de mídia
+
+Sempre que um fato produz uma mídia (clip, foto, áudio), valem duas regras — fixadas
+no [ADR-11](decisions.md) e no [Modelo Conceitual](00-conceptual-model.md#05-kind-o-discriminador-fixo):
+
+- **O produtor emite apenas o evento de domínio** (`detection`/`annotation`), já com o
+  `blob_ref`. O evento `object` ("um blob entrou no data lake") é gerado pelo **próprio
+  MinIO** (bucket notification), não pelo dispositivo. Assim o device nunca transmite
+  duas mensagens pelo mesmo fato — relevante para hardware de campo com bateria/LoRa.
+- **A ligação entre os dois eventos é o `blob_ref` compartilhado.** O `object_key` é
+  composto por uma **convenção de nomes** (ex.: `{tipo}/{data}/{device_id}-{ts}.{ext}`),
+  nunca *hardcoded* no dispositivo; o `blob_ref` é a URI neutra `{esquema}://{bucket}/{object_key}`.
+
+Esse princípio é o mesmo para **mídia local** (câmeras na sede, hoje) e para **mídia
+remota** (celular/Raspi em campo, futuramente): muda o produtor, não a arquitetura.
+
 ## 4.3 Estrutura de diretórios do repositório
 
 ```
@@ -159,10 +186,8 @@ farm-monitoring/
 │   │   └── prometheus.yml        # Scrape targets
 │   ├── redpanda/               # (vazio — .gitkeep; config via flags no compose)
 │   └── redpanda-connect/
-│       ├── mqtt-to-redpanda.yml   # Pipeline: MQTT (sensores + frigate) → topics
-│       ├── sensors-to-influx.yml  # Pipeline: sensors.telemetry → InfluxDB
-│       ├── frigate-to-influx.yml  # Pipeline: frigate.events → InfluxDB
-│       └── minio-to-influx.yml    # Pipeline: minio.events → InfluxDB
+│       ├── mqtt-to-redpanda.yml   # Bridge: MQTT (sensores/frigate/anotações) → topic `events` (Evento Canônico)
+│       └── events-to-influx.yml   # Consumer único: `events` + `minio.events` → measurement `events`
 │
 ├── scripts/
 │   ├── setup.sh                 # Cria topics Redpanda + database InfluxDB

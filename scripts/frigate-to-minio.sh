@@ -7,7 +7,7 @@
 # that volume into the MinIO "media" bucket using `mc mirror --watch`.
 #
 # Once objects land in MinIO, bucket notifications fire the `minio.events`
-# topic → redpanda-connect (minio-to-influx) → InfluxDB `media_objects`.
+# topic → redpanda-connect (events-to-influx) → InfluxDB measurement `events` (kind=object).
 # This closes data flows 2 and 3 end-to-end.
 #
 # Runs as a long-running container (daemon), not a one-shot.
@@ -52,7 +52,7 @@ mc ls "$MINIO_ALIAS/$BUCKET" > /dev/null 2>&1 || {
 
 # -- Mirror each Frigate subdirectory into the media bucket -------------------
 # Keep Frigate's directory names as object-key prefixes so that
-# minio-to-influx derives source = clips / recordings / exports-frigate.
+# events-to-influx derives source = clips / recordings / exports-frigate (kind=object).
 #
 # NOTE: no --remove flag. Frigate applies its own local retention; MinIO (and
 # its geo-replica) is the long-term cold storage, so we do NOT delete objects

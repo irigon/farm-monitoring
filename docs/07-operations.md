@@ -62,8 +62,8 @@ docker inspect --format='{{.State.Health.Status}}' influxdb
 
 ### Redpanda Console (http://localhost:8080)
 Interface principal para debug de mensagens e topics.
-- **Topics**: `sensors.telemetry`, `frigate.events`, `minio.events`. Clique num topic
-  para ver o payload, headers, offset e timestamp das mensagens.
+- **Topics**: `events` (Evento Canônico) e `minio.events` (notificações MinIO cruas).
+  Clique num topic para ver o payload, headers, offset e timestamp das mensagens.
 - **Consumer Groups**: verifique lag (mensagens não consumidas).
 
 > Se aparecer "issues deserializing the value", troque o **Value Deserializer** de
@@ -78,8 +78,7 @@ Interface principal para debug de mensagens e topics.
 ```bash
 curl -s http://localhost:4195/ready      # Esperado: OK
 curl -s http://localhost:4195/streams | python3 -m json.tool
-# Esperado: mqtt-to-redpanda, sensors-to-influx, frigate-to-influx,
-#           minio-to-influx com "active": true
+# Esperado: mqtt-to-redpanda, events-to-influx com "active": true
 curl -s http://localhost:4195/metrics | grep -E 'input_received|output_sent|processor_error'
 ```
 Se um stream não aparece ou está `active: false`: cheque `docker compose logs
@@ -94,7 +93,7 @@ curl -s http://localhost:8181/health      # Esperado: OK
 # Consultar dados (SQL)
 curl -s 'http://localhost:8181/api/v3/query_sql' -G \
   --data-urlencode 'db=farm' \
-  --data-urlencode 'q=SELECT * FROM sensor_readings ORDER BY time DESC LIMIT 10' \
+  --data-urlencode "q=SELECT * FROM events WHERE kind='metric' ORDER BY time DESC LIMIT 10" \
   --data-urlencode 'format=json' | python3 -m json.tool
 
 # Listar tabelas / criar database
@@ -108,8 +107,8 @@ curl -X POST http://localhost:8181/api/v3/configure/database \
 ### Redpanda — topics via CLI
 ```bash
 docker exec redpanda rpk topic list --brokers localhost:9092
-docker exec redpanda rpk topic consume sensors.telemetry --brokers localhost:9092 --num 3
-docker exec redpanda rpk group describe influx-sensor-writer --brokers localhost:9092
+docker exec redpanda rpk topic consume events --brokers localhost:9092 --num 3
+docker exec redpanda rpk group describe influx-events-writer --brokers localhost:9092
 ```
 
 ### MinIO
@@ -126,7 +125,7 @@ docker run --rm --network farm-monitoring_monitoring --entrypoint="" minio/mc:la
 Para validar o pipeline completo `MQTT → Redpanda → InfluxDB`, veja o passo a passo em
 [Como Usar → Publicar uma leitura de teste](03-usage.md#34-publicar-uma-leitura-de-teste).
 Para o Data Lake, faça um upload de teste no MinIO e verifique que o measurement
-`media_objects` recebe o registro.
+`events` (com `kind='object'`) recebe o registro.
 
 ## 7.4 Problemas comuns
 

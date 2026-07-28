@@ -19,9 +19,8 @@ os dashboards que existem hoje.
 
 | Topic | Produtor | Consumidor | Conteúdo |
 |---|---|---|---|
-| `sensors.telemetry` | `mqtt-to-redpanda` (via MQTT) | `sensors-to-influx` | Leituras de sensores (temp, umidade, pH, lux, etc.) |
-| `frigate.events` | `mqtt-to-redpanda` (via MQTT) | `frigate-to-influx` | Eventos de detecção do Frigate |
-| `minio.events` | MinIO (bucket notification) | `minio-to-influx` | Notificações de criação/deleção de objetos no MinIO |
+| `events` | `mqtt-to-redpanda` (sensores, Frigate, anotações via MQTT) | `events-to-influx` | Evento Canônico já normalizado (`metric`/`detection`/`annotation`) |
+| `minio.events` | MinIO (bucket notification) | `events-to-influx` | Notificações de objetos no MinIO (cru); canonizado para `kind=object` no consumer |
 
 ## 6.3 Buckets do MinIO
 
@@ -36,53 +35,40 @@ os dashboards que existem hoje.
 | `exports/` | Exports do InfluxDB (Parquet, CSV) |
 | `backups/` | Backups de configuração, dumps, etc. |
 
-## 6.4 Measurements do InfluxDB
+## 6.4 Measurement do InfluxDB — `events` (canônico)
 
-Estes são os schemas **realmente emitidos** pelos pipelines em
-`config/redpanda-connect/`.
+O sistema grava **um único measurement canônico `events`**, emitido pelos pipelines em
+`config/redpanda-connect/`. Ele materializa o **Evento Canônico** definido no
+[Modelo Conceitual §0.3](00-conceptual-model.md#03-o-evento-canônico) e
+[§0.6](00-conceptual-model.md#06-source-e-measure-os-eixos-abertos), e segue o
+[ADR-11](decisions.md) para eventos de mídia.
 
-### `sensor_readings` (de `sensors-to-influx`)
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `node_id` | tag | Identificador do nó sensor |
-| `sensor_type` | tag | Tipo (`temp`, `humidity`, `soil_moisture`, `ph`, `lux`, …) |
-| `location` | tag | Localização (padrão: `default`) |
-| `value` | field (float) | Valor lido |
+### Schema de `events`
+| Campo | Tipo InfluxDB | Origem canônica | Descrição |
+|---|---|---|---|
+| `kind` | tag | `kind` | Discriminador fixo: `metric`, `detection`, `annotation`, `object` (`state` deferido) |
+| `source` | tag | `source` | Quem produziu (nó sensor, câmera, device de anotação, `source` do path no MinIO) |
+| `measure` | tag | `measure` | O que foi observado (`temp`, `person`, `audio`, `content_type`, …) |
+| `<context.*>` | tag (dinâmica) | `context{}` | Dimensões de agrupamento de baixa cardinalidade (`location`, `zone`, …). Novas chaves entram sem migração — o consumer itera `context{}` e emite cada uma como tag |
+| `value` | field (float) | `value` | Valor numérico agregável (omitido quando `null`) |
+| `blob_ref` | field (string) | `blob_ref` | URI neutra do blob no data lake (omitido quando `null`) |
+| `<attrs.*>` | field (dinâmico) | `attrs{}` | Descritores de alta cardinalidade (`score`, `event_id`, `etag`, `size_bytes`, `lat`, `lon`, `summary`, …). Número → field numérico; demais → field string |
+| _timestamp_ | ns | `ts` (ms) | `ts` canônico em ms, convertido para ns na escrita |
 
-### `frigate_events` (de `frigate-to-influx`)
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `camera` | tag | Câmera de origem |
-| `label` | tag | Objeto detectado (`person`, `car`, …) |
-| `type` | tag | Tipo do evento (`new`, `end` — eventos `update` são descartados) |
-| `zone` | tag | Zona (`none` se vazio) |
-| `score` | field (float) | Confiança da detecção |
-| `event_id` | field (string) | ID do evento no Frigate |
-| `has_clip` | field (string) | `"true"`/`"false"` |
-| `has_snapshot` | field (string) | `"true"`/`"false"` |
+> **Identidade / idempotência (ADR-10):** um ponto no InfluxDB é identificado por
+> `measurement + tag set + timestamp`, e a escrita é *upsert* (last-write-wins). Como
+> `kind+source+measure+context.*` + `ts` (em ms) é único na prática (câmeras/devices têm
+> `source` distinto; a colisão da tripla no mesmo ms é irreal), **replay não duplica nem
+> sobrescreve** eventos legítimos. Discriminadores como `event_id`/`etag` ficam em `attrs`
+> (fields) — não são promovidos a tag para não inflar a cardinalidade de séries.
 
-### `media_objects` (de `minio-to-influx`)
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `bucket` | tag | Bucket de origem |
-| `content_type` | tag | Content-type do objeto |
-| `source` | tag | Primeiro segmento do path (`clips`, `snapshots`, `uploads`, …) |
-| `event` | tag | Nome do evento S3 (ex.: `s3:ObjectCreated:Put`) |
-| `object_key` | field (string) | Caminho do objeto (sem o prefixo do bucket) |
-| `size_bytes` | field (int) | Tamanho em bytes |
-| `etag` | field (string) | ETag do objeto |
-
-### `annotations` (de `annotations-to-influx`)
-Observações humanas (áudio/foto/texto). Só metadados + ponteiro; o conteúdo fica no MinIO.
-| Campo | Tipo | Descrição |
-|---|---|---|
-| `location` | tag | Tipo de contexto "onde" (zona/local; padrão: `default`). Modelo de contexto Opção 2: outros tipos (`asset`, `subsystem`, …) podem ser adicionados como tags no futuro, sem mudança de esquema |
-| `kind` | tag | Tipo da anotação (`audio`, `photo`, `text`, …; padrão: `unknown`) |
-| `lat` | field (float) | Latitude GPS — **opcional, omitido quando ausente** |
-| `lon` | field (float) | Longitude GPS — **opcional, omitido quando ausente** |
-| `gps_accuracy` | field (float) | Precisão do GPS em metros — **opcional** |
-| `object_key` | field (string) | Ponteiro para o conteúdo no MinIO (vazio se não houver mídia) |
-| `summary` | field (string) | Rótulo curto **opcional, fornecido pelo cliente** (nunca autogerado) |
+### Como cada fonte mapeia para `events`
+| Fonte (dialeto) | `kind` | `source` | `measure` | Observações |
+|---|---|---|---|---|
+| Sensores (LoRa→MQTT) | `metric` | `node_id` | `type` | `value` numérico; `context.location` |
+| Frigate (MQTT) | `detection` | `camera` | `label` | `context.zone`; `attrs`: `event_id`, `score`, `has_clip`, … (eventos `update` descartados) |
+| Anotações (MQTT) | `annotation` | `device_id` (fallback `annotations-app`) | `kind` do payload | `blob_ref` do `object_key`; `attrs`: `summary`, `lat`, `lon`, `gps_accuracy` |
+| Objetos MinIO (bucket notification) | `object` | 1º segmento do path (`clips`, `snapshots`, …) | `content_type` | `blob_ref` = `s3://{bucket}/{key}`; `attrs`: `etag`, `size_bytes`, `event_name` |
 
 ## 6.5 Política de retenção
 
@@ -97,6 +83,12 @@ Observações humanas (áudio/foto/texto). Só metadados + ponteiro; o conteúdo
 > O *downsample* (agregar dados >30 dias em médias horárias/diárias) e a réplica
 > geográfica são parte do design de retenção; a automação correspondente e o servidor
 > remoto ainda não estão presentes no repositório.
+
+> **Nota — dupla contagem por `blob_ref` (Q1):** Um mesmo fato de mídia gera **dois**
+> eventos que compartilham o mesmo `blob_ref`: o de domínio (`detection`/`annotation`) e
+> o `object` emitido pelo MinIO. Ao agregar volumes ou contar eventos, os pipelines e
+> consultas devem filtrar `kind != object` para não contar o mesmo blob duas vezes.
+> Ver [Q1 em decisions.md](decisions.md) e [ADR-11](decisions.md).
 
 ## 6.6 Dashboards do Grafana
 
