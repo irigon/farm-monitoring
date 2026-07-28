@@ -5,7 +5,25 @@
 > para reconstruir o contexto sem reler discussões.
 >
 > Detalhamento conceitual em [00-conceptual-model.md](00-conceptual-model.md).
-> Status possíveis: `aceito` · `a revisar`.
+> Status possíveis: `proposto` · `aceito` · `supersedido` · `a revisar`.
+> Última revisão: 2026-07.
+>
+> **Índice**
+>
+> | # | Título | Status |
+> |---|---|---|
+> | ADR-1 | Plataforma de monitoramento genérica | aceito |
+> | ADR-2 | Duas primitivas de armazenamento (blob vs evento) | aceito |
+> | ADR-3 | Evento Canônico como unidade central | aceito |
+> | ADR-4 | Três eixos ortogonais (`kind` / `source` / `measure`) | aceito |
+> | ADR-5 | `kind` fixo com 5 valores | aceito |
+> | ADR-6 | Modelo híbrido | supersedido por ADR-3 |
+> | ADR-7 | Núcleo isolado — barramento como fronteira | aceito |
+> | ADR-8 | YAGNI da abstração de banco | aceito |
+> | ADR-9 | Localização — lugar nomeado vs. coordenada precisa | aceito |
+> | ADR-10 | Identidade de evento e idempotência | aceito |
+>
+> Questões conhecidas ainda **não decididas** ficam na seção [Questões em Aberto](#questões-em-aberto-diferidas) ao fim — fora da numeração de ADRs, pois não são decisões.
 >
 > **Vocabulário mínimo** (definido em detalhe no [modelo conceitual](00-conceptual-model.md)):
 > o **Evento Canônico** tem um `ts` (event time) mais oito campos de conteúdo. `kind` =
@@ -40,6 +58,7 @@
 - **Decisão:** existem só dois tipos de dado — **blob** (bruto, pesado, imutável, no data lake) e **evento** (leve, rápido, no banco de métricas). Todo evento tem `value`, `blob_ref`, ou ambos.
 - **Por quê:** reflete a realidade física do sistema (dados rápidos vs. lentos); o conteúdo pesado é referenciado, nunca copiado para o banco de métricas.
 - **Alternativa descartada:** um único store para tudo — inviável (mistura séries temporais com blobs pesados).
+- **Consequências:** o sistema passa a ter **dois storages** com ciclos de vida e garantias distintos (o rápido é consultável por série temporal; o lento é referenciado). Surge a necessidade de manter os dois consistentes — um evento pode apontar (`blob_ref`) para um blob que ainda não foi replicado, ou um blob pode existir sem evento de domínio. O preço aceito é essa coordenação entre os dois planos (ver ADR-10 para identidade e a seção de Questões em Aberto para a dupla emissão).
 - **Status:** aceito
 
 ---
@@ -56,9 +75,10 @@
   Ou seja: **padrão de acesso conta — mas só governa o resíduo não-promovido.** A promoção é anterior e por outra razão (domínio).
 - **Dois planos distintos (por que não há contradição):** definir os campos de antemão **não** define como armazená-los. São perguntas separadas:
     - *Quais campos existem e o que significam?* → plano de **modelo/domínio**, fixado aqui pela promoção.
-    - *Como cada campo é fisicamente gravado* (índice, coluna, documento; "tag vs field")? → plano de **armazenamento**, responsabilidade **exclusiva do adaptador de saída** (ver ADR-6/ADR-7), invisível ao modelo.
+    - *Como cada campo é fisicamente gravado* (índice, coluna, documento; "tag vs field")? → plano de **armazenamento**, responsabilidade **exclusiva do adaptador de saída** (ver ADR-7), invisível ao modelo.
   Analogia: um contrato/DTO fixa os campos; o serializador/ORM decide a persistência. Fixar o contrato de antemão é justamente o que *libera* o adaptador para escolher o mapa físico sem afetar o domínio.
-- **Alternativa descartada:** um schema ad-hoc por tipo de fonte (o estado atual: `node_id`/`camera`/`bucket` despadronizados) — impede consultas genéricas.
+- **Alternativa descartada:** (a) um schema ad-hoc por tipo de fonte (o estado atual: `node_id`/`camera`/`bucket` despadronizados) — impede consultas genéricas; (b) um modelo `{kind, context}` puro (todo campo não-promovido dentro de um único contêiner) — logicamente elegante, mas obriga o sistema a decidir item a item o papel físico de cada campo; descartado por custo de busca/indexação. Reconsiderar se o banco mudar para documental.
+- **Nota (nível de abstração):** a *abertura* de `context{}`/`attrs{}` — aceitar chaves novas sem migração — é propriedade do **modelo**. Como o adaptador de saída materializa dinamicamente essas chaves (para cumprir a promessa "qualificador novo sem migração") é detalhe do adaptador, tratado no doc de arquitetura, não aqui.
 - **Status:** aceito
 
 ---
@@ -81,13 +101,14 @@
 
 ---
 
-### ADR-6: Modelo híbrido (campos promovidos + `context{}` / `attrs{}` abertos)
+### ADR-6: Modelo híbrido — consolidado no ADR-3
 
-- **Decisão:** promover `source`, `measure`, `value`, `blob_ref` a campos de primeira classe; manter **dois contêineres abertos** para o restante: `context{}` para qualificadores de agrupamento (ex.: `location`, `zone`) e `attrs{}` para atributos descritivos do fato (ex.: `lat`, `score`, `battery`).
-- **Por quê:** a promoção segue o critério de **dois níveis** do ADR-3 — Nível 1 (necessidade de domínio) promove `value`/`blob_ref` (regra de domínio, ADR-2) e `source`/`measure` (eixos de consulta universais); Nível 2 (padrão de acesso/cardinalidade) classifica o resíduo em `context{}` vs. `attrs{}`. O **mapeamento físico** (o que vira índice/tag vs. agregável/field vs. coluna/documento) fica confinado ao **adaptador de saída** — não vaza para o modelo. Ou seja: o modelo pré-define *quais campos existem*; o adaptador decide *como armazená-los*.
-- **Alternativa descartada:** modelo `{kind, context}` puro (tudo dentro de `context`) — logicamente elegante, mas obriga o sistema a decidir item a item o papel físico de cada campo; descartado por custo de busca/indexação. Reconsiderar se o banco mudar para documental.
-- **Nota (nível de abstração):** a *abertura* de `context{}`/`attrs{}` — aceitar chaves novas sem migração — é propriedade do **modelo**. Como o adaptador de saída materializa dinamicamente essas chaves (para cumprir a promessa "qualificador novo sem migração") é detalhe do adaptador, tratado no doc de arquitetura, não aqui.
-- **Status:** aceito
+> **Consolidado.** Esta decisão (promover `source`/`measure`/`value`/`blob_ref` e manter
+> `context{}`/`attrs{}` abertos) era uma paráfrase do critério de dois níveis do ADR-3.
+> Para evitar duplicação e risco de divergência, foi **absorvida pelo ADR-3** — incluindo
+> a alternativa descartada (`{kind, context}` puro) e a nota sobre a *abertura* ser
+> propriedade do modelo. Âncora mantida para não quebrar referências.
+- **Status:** supersedido por ADR-3
 
 ---
 
@@ -105,6 +126,7 @@
 - **Decisão:** desenhar o modelo neutro de tecnologia (higiene, custo zero), mas **não** construir agora uma interface `EventStore` formal com múltiplos adaptadores e testes de portabilidade.
 - **Por quê:** o barramento de eventos já provê o desacoplamento; trocar de banco = escrever um novo consumidor. A abstração formal só se justifica com um *segundo* banco real na mesa. Referência de mercado: OpenTelemetry (modelo canônico + exporters) e Grafana abstraem a dimensão que é o valor do produto; um TSDB não abstrai o storage abaixo dele.
 - **Alternativa descartada:** construir a camada de abstração de banco já — over-engineering para futuro hipotético.
+- **Consequências:** trocar de banco no futuro exige **escrever um novo adaptador de saída (consumidor)** do zero — não há interface pronta que garanta portabilidade. Aceita-se pagar esse custo *quando* (e se) um segundo banco entrar em cena, em troca de não carregar maquinaria especulativa agora. O risco é subestimar esse custo futuro; mitigação = manter o modelo canônico neutro (ADR-3), o que já concentra o acoplamento no adaptador.
 - **Status:** aceito
 
 ---
@@ -123,32 +145,26 @@
 - **Decisão:** o barramento entrega eventos **at-least-once** (Redpanda com replay). A deduplicação é responsabilidade do **adaptador de saída**, que deriva uma **identidade determinística** do evento. A regra de identidade, em ordem de precedência, é: (1) um `event_id` da fonte, quando presente; senão (2) o `blob_ref`, quando presente; senão (3) a combinação `source + measure + ts` **mais um discriminador** que a torne única. O discriminador é necessário porque `source + measure + ts` **não é único por construção** (eixos ortogonais: a mesma `source` emite vários `measure`; duas detecções podem cair no mesmo `ts`), e usar só a tripla causaria **perda silenciosa** de eventos legítimos. Quando propagado, o `event_id` da fonte é preservado em `attrs{}` (não em `context{}`).
 - **Por quê:** replay e reprocessamento (ADR-8: "novo banco = novo consumidor") produzem duplicatas por construção. Sem uma regra de identidade, o histórico do banco de métricas fica inflado e não-reproduzível. A precedência por `event_id`/`blob_ref` resolve a maioria dos casos; o discriminador cobre a colisão legítima da tripla. O `event_id` da fonte vai em `attrs{}` (não em `context{}`) porque é quase-único — mesma razão de cardinalidade que manda o GPS para `attrs{}` no ADR-9.
 - **Alternativa descartada:** exigir um `event_id` obrigatório no modelo canônico — acoplaria o domínio a uma semântica de identidade que nem toda fonte fornece.
+- **Consequências:** cada adaptador de saída carrega a complexidade de derivar identidade e deduplicar — não é "de graça". Onde a fonte não fornece `event_id` nem `blob_ref`, o adaptador **precisa** de um discriminador real para a tripla `source+measure+ts`; se não houver, resta escolher entre risco de **perda silenciosa** (dois eventos legítimos idênticos colapsam) ou de **duplicata no replay**. Esse trade-off é real e não eliminado por este ADR — apenas localizado no adaptador. Recomendação prática: fontes que possam gerar um `event_id` (mesmo um contador monotônico por nó) tornam a dedup determinística e o replay seguro.
 - **Fronteira (nível de abstração):** este ADR fixa apenas a *política* de identidade e a responsabilidade (adaptador). O **mecanismo físico** de como o discriminador é calculado e de como a dedup se materializa no banco é detalhe do adaptador de saída — vive no doc de arquitetura, não aqui e nem no [00-conceptual-model.md](00-conceptual-model.md) (o core neutro não conhece garantia de entrega nem dedup).
 - **Status:** aceito
 
 ---
 
-### ADR-11: Questões deliberadamente diferidas para a implementação
+## Questões em Aberto (Diferidas)
 
-> Não são furos do modelo conceitual — são consequências conhecidas cuja *solução
-> física* pertence ao adaptador de saída e não precisa (nem deve) ser fixada no plano
-> conceitual. Registradas aqui apenas para não se perderem.
+> Isto **não é uma decisão** — é uma consequência conhecida cuja *solução física*
+> pertence ao adaptador de saída e ainda não foi fixada. Por isso vive fora da
+> numeração de ADRs. Quando for resolvida, vira um ADR novo. Registrada
+> aqui apenas para não se perder.
 
-- **Dupla emissão por um fato (`object` + evento de domínio).** Um mesmo fato do mundo
-  pode gerar dois eventos legítimos — ex.: uma `detection` (domínio) e um `object`
-  (infraestrutura do data lake) que compartilham o mesmo `blob_ref`. Isto é
-  **característica do domínio, não defeito**: descrevem aspectos distintos (o que foi
-  reconhecido vs. o que entrou no data lake). O único efeito colateral é **dupla
-  contagem** em agregações ingênuas; a mitigação (escopo/tabela separada, tag
-  reservada, ou convenção de query `kind != object`) é escolha do adaptador,
-  **decisão diferida**. Correlação entre os dois já está garantida pelo `blob_ref`
-  compartilhado (ver §0.5 do modelo conceitual).
-- **Cardinalidade física de `source`.** `source` é primeira-classe por **necessidade de
-  domínio** (ADR-3, Nível 1) — a promoção não é questionada. Resta apenas uma
-  observação de borda: como o adaptador tende a materializar `source` como dimensão de
-  agrupamento (tag), ele é o eixo promovido de maior cardinalidade. Se algum dia uma
-  fonte for identificada por algo quase-único por evento (por-sessão/por-requisição),
-  esse identificador **não é `source`** — vai para `attrs{}`, e o `source` continua
-  sendo o publicador estável. Tratamento físico = **decisão diferida** do adaptador; o
-  modelo permanece intacto.
-- **Status:** aceito (como registro de itens diferidos)
+### Q1 — Dupla emissão por um fato (`object` + evento de domínio)
+
+Um mesmo fato do mundo pode gerar dois eventos legítimos — ex.: uma `detection`
+(domínio) e um `object` (infraestrutura do data lake) que compartilham o mesmo
+`blob_ref`. Isto é **característica do domínio, não defeito**: descrevem aspectos
+distintos (o que foi reconhecido vs. o que entrou no data lake). O único efeito
+colateral é **dupla contagem** em agregações ingênuas; a mitigação (escopo/tabela
+separada, tag reservada, ou convenção de query `kind != object`) é escolha do
+adaptador, **diferida**. Correlação entre os dois já está garantida pelo `blob_ref`
+compartilhado (ver §0.5 do modelo conceitual).
