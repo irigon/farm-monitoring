@@ -31,8 +31,8 @@ services:
   mosquitto-setup:
     image: eclipse-mosquitto:2
     container_name: mosquitto-setup
-    entrypoint: /bin/sh
-    command: /scripts/mosquitto-setup.sh
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sh /scripts/mosquitto-setup.sh"]
     volumes:
       - ./scripts:/scripts:ro
       - ./config/mosquitto:/mosquitto/config   # rw: script writes password_file here
@@ -198,8 +198,8 @@ services:
   setup:
     image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
     container_name: farm-setup
-    entrypoint: /bin/bash
-    command: /scripts/setup.sh
+    entrypoint: ["/bin/bash", "-c"]
+    command: ["bash /scripts/setup.sh"]
     volumes:
       - ./scripts:/scripts:ro
     environment:
@@ -261,8 +261,8 @@ services:
   minio-setup:
     image: minio/mc:latest
     container_name: minio-setup
-    entrypoint: /bin/sh
-    command: /scripts/minio-setup.sh
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["sh /scripts/minio-setup.sh"]
     volumes:
       - ./scripts:/scripts:ro
     environment:
