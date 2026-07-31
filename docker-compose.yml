@@ -315,7 +315,7 @@ services:
   # ---------------------------------------------------------------------------
   # Frigate has no native S3 backend; it writes clips/recordings/exports to its
   # local volume. This sidecar mirrors that volume into the MinIO "media" bucket
-  # via `mc mirror --watch`, which triggers minio.events → InfluxDB media_objects.
+  # via `mc mirror --watch`, which triggers minio.events → InfluxDB events (kind=object).
   frigate-to-minio:
     image: minio/mc:latest
     container_name: frigate-to-minio
