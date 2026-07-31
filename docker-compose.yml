@@ -389,7 +389,7 @@ services:
       - "--web.enable-lifecycle"
     volumes:
       - prometheus-data:/prometheus
-      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z
     networks:
       - monitoring
 
