@@ -389,7 +389,7 @@ services:
       - "--web.enable-lifecycle"
     volumes:
       - prometheus-data:/prometheus
-      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,Z
     networks:
       - monitoring
 
@@ -416,9 +416,16 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
     restart: unless-stopped
+    privileged: true
     mem_limit: 256m
     mem_reservation: 64m
+    devices:
+      - /dev/kmsg
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro,Z
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
     networks:
       - monitoring
