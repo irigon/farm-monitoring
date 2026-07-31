@@ -35,7 +35,7 @@ services:
     command: /scripts/mosquitto-setup.sh
     volumes:
       - ./scripts:/scripts:ro,z
-      - ./config/mosquitto:/mosquitto/config   # rw: script writes password_file here
+      - ./config/mosquitto:/mosquitto/config:z   # rw: script writes password_file here
     environment:
       MQTT_USER: "${MQTT_USER}"
       MQTT_PASSWORD: "${MQTT_PASSWORD}"
@@ -57,8 +57,8 @@ services:
     ports:
       - "1883:1883"
     volumes:
-      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-      - ./config/mosquitto/password_file:/mosquitto/config/password_file:ro
+      - ./config/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,z
+      - ./config/mosquitto/password_file:/mosquitto/config/password_file:ro,z
       - mosquitto-data:/mosquitto/data
     depends_on:
       mosquitto-setup:
@@ -176,7 +176,7 @@ services:
       - --chilled
       - /pipelines/*.yml
     volumes:
-      - ./config/redpanda-connect:/pipelines:ro
+      - ./config/redpanda-connect:/pipelines:ro,z
     environment:
       MQTT_USER: "${MQTT_USER}"
       MQTT_PASSWORD: "${MQTT_PASSWORD}"
@@ -362,8 +362,8 @@ services:
       INFLUXDB_DATABASE: "${INFLUXDB_DATABASE}"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro,z
     depends_on:
       influxdb:
         condition: service_healthy
