@@ -37,9 +37,10 @@ pipeline:
         let ctx_tags = this.context.or({}).key_values().map_each(v -> v.key.re_replace_all("[, =]", "_") + "=" + v.value.string().re_replace_all("[, =]", "_")).join(",")
         let tags = if $ctx_tags != "" { $base_tags + "," + $ctx_tags } else { $base_tags }
         let value_field = if this.value != null { ["value=" + this.value.string()] } else { [] }
+        let received_field = if this.received_ts != null { ["received_ts=" + this.received_ts.string() + "i"] } else { [] }
         let blob_field = if this.blob_ref != null { ["blob_ref=" + this.blob_ref.string().quote()] } else { [] }
         let attr_fields = this.attrs.or({}).key_values().map_each(v -> if v.value.type() == "number" { v.key.re_replace_all("[, =]", "_") + "=" + v.value.string() } else { v.key.re_replace_all("[, =]", "_") + "=" + v.value.string().quote() })
-        let all_fields = $value_field.concat($blob_field).concat($attr_fields)
+        let all_fields = $value_field.concat($received_field).concat($blob_field).concat($attr_fields)
         let fields = if $all_fields.length() > 0 { $all_fields.join(",") } else { "present=true" }
         let ts_ns = (this.ts.or(now().ts_unix() * 1000) * 1000000).floor()
         root = "events," + $tags + " " + $fields + " " + $ts_ns.string()

@@ -19,6 +19,7 @@ pipeline:
                 root = if $event_type == "update" { deleted() } else {
                   {
                     "ts": ($ts_s * 1000).floor(),
+                    "received_ts": (now().ts_unix() * 1000).floor(),
                     "kind": "detection",
                     "source": $after.camera.or("unknown"),
                     "measure": $after.label.or("unknown"),
@@ -34,6 +35,7 @@ pipeline:
                 let ts_s = this.ts.or(now().ts_unix())
                 let object_key = this.object_key.or("")
                 root.ts = ($ts_s * 1000).floor()
+                root.received_ts = (now().ts_unix() * 1000).floor()
                 root.kind = "annotation"
                 root.source = this.device_id.or("annotations-app")
                 root.measure = this.kind.or("unknown")
@@ -48,6 +50,7 @@ pipeline:
             - mapping: |
                 let ts_s = this.ts.or(now().ts_unix())
                 root.ts = ($ts_s * 1000).floor()
+                root.received_ts = (now().ts_unix() * 1000).floor()
                 root.kind = "metric"
                 root.source = this.node_id.or("unknown")
                 root.measure = this.type.or("unknown")
