@@ -4,7 +4,7 @@
 # Runs as a one-shot container using the eclipse-mosquitto:2 image, BEFORE
 # the mosquitto broker starts. Idempotent: rebuilds the file on every run.
 # =============================================================================
-set -eu
+set -exu
 
 PASSWORD_FILE="/mosquitto/config/password_file"
 
