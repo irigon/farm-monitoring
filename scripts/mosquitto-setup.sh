@@ -19,6 +19,7 @@ fi
 # -- Create the primary MQTT user (this creates/overwrites the file) ----------
 echo "Creating password_file for user: $MQTT_USER"
 # -c creates the file (overwrites), -b takes the password on the command line
+rm -f "$PASSWORD_FILE"          # ensure idempotency: -c refuses if file exists
 mosquitto_passwd -c -b "$PASSWORD_FILE" "$MQTT_USER" "$MQTT_PASSWORD"
 
 # -- Add the Frigate MQTT user if it differs from the primary user ------------
@@ -36,6 +37,7 @@ else
 fi
 
 # -- Lock down permissions (mosquitto warns if the file is world-readable) ----
+chown 1883:1883 "$PASSWORD_FILE" 2>/dev/null || true   # owned by the mosquitto user
 chmod 0700 "$PASSWORD_FILE" 2>/dev/null || true
 
 echo ""
