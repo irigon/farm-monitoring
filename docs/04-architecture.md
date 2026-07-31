@@ -126,7 +126,7 @@ Todos os serviços rodam como containers Docker, orquestrados via Docker Compose
 | 5 | **InfluxDB 3 Core** | `influxdb:3-core` | ~500 MB | 8181 | Banco time-series. Sensores, eventos Frigate e metadados de mídia. SQL via API HTTP. |
 | 6 | **MinIO** | `minio/minio:latest` | ~300 MB | 9000, 9001 | Object storage (Data Lake). Mídia, exports e backups. Bucket notifications → Redpanda. |
 | 7 | **Frigate** | `ghcr.io/blakeblackshear/frigate:stable` | ~800 MB–1 GB | 5000, 8554, 8555 | NVR inteligente. RTSP das câmeras, detecção de objetos, clips/snapshots, eventos MQTT. |
-| 8 | **Grafana** | `grafana/grafana-oss:latest` | ~200 MB | 3000 | Dashboards e alertas. Datasources: InfluxDB 3 (SQL) e Prometheus. |
+| 8 | **Grafana*`grafana/grafana:latest`est` | ~200 MB | 3000 | Dashboards e alertas. Datasources: InfluxDB 3 (SQL) e Prometheus. |
 | 9 | **Prometheus** | `prom/prometheus:latest` | ~200 MB | 9090 | Monitoramento de infraestrutura (containers + host). |
 | 10 | **cAdvisor** | `gcr.io/cadvisor/cadvisor:latest` | ~50 MB | (interno) | Métricas de resource usage dos containers → Prometheus. |
 | 11 | **Node Exporter** | `prom/node-exporter:latest` | ~20 MB | 9100 | Métricas da máquina host → Prometheus. |

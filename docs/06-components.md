@@ -26,10 +26,11 @@ os dashboards que existem hoje.
 
 | Bucket / prefixo | Conteúdo |
 |---|---|
-| `media/clips/` | Clips de vídeo gerados pelo Frigate |
-| `media/snapshots/` | Snapshots de detecção do Frigate |
+| `media/clips/` | Clips de vídeo do Frigate — inclui os snapshots de detecção (`.jpg`), que o Frigate grava neste mesmo diretório em disco (espelhado pelo sidecar `frigate-to-minio.sh`) |
+| `media/recordings/` | Gravações contínuas do Frigate (espelhadas pelo sidecar) |
+| `media/exports-frigate/` | Exports gerados pelo Frigate (espelhados pelo sidecar) |
 | `media/uploads/` | Fotos/vídeos enviados manualmente ou por scripts |
-| `media/audio/` | Áudios de anotações (conteúdo; ponteiro em `annotations`) |
+| `media/audio/` | Áudios de anotações (conteúdo; ponteiro em `events`, `kind=annotation`) |
 | `media/photos/` | Fotos de anotações |
 | `media/notes/` | Texto de anotações (`.txt`/`.md`; conteúdo fica aqui, não no InfluxDB) |
 | `exports/` | Exports do InfluxDB (Parquet, CSV) |
@@ -68,7 +69,7 @@ O sistema grava **um único measurement canônico `events`**, emitido pelos pipe
 | Sensores (LoRa→MQTT) | `metric` | `node_id` | `type` | `value` numérico; `context.location` |
 | Frigate (MQTT) | `detection` | `camera` | `label` | `context.zone`; `attrs`: `event_id`, `score`, `has_clip`, … (eventos `update` descartados) |
 | Anotações (MQTT) | `annotation` | `device_id` (fallback `annotations-app`) | `kind` do payload | `blob_ref` do `object_key`; `attrs`: `summary`, `lat`, `lon`, `gps_accuracy` |
-| Objetos MinIO (bucket notification) | `object` | 1º segmento do path (`clips`, `snapshots`, …) | `content_type` | `blob_ref` = `s3://{bucket}/{key}`; `attrs`: `etag`, `size_bytes`, `event_name` |
+| Objetos MinIO (bucket notification) | `object` | 1º segmento do path (`clips`, `recordings`, `uploads`, …) | `content_type` | `blob_ref` = `s3://{bucket}/{key}`; `attrs`: `etag`, `size_bytes`, `event_name` |
 
 ## 6.5 Política de retenção
 

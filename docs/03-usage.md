@@ -115,7 +115,7 @@ Se a leitura aparecer no passo 3, o pipeline está saudável. Abra o dashboard
 Acesse o **MinIO Console** em **http://localhost:9001** e faça login com
 `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`. Você verá os buckets:
 
-- **`media`** — clips (`clips/`), snapshots (`snapshots/`) e uploads (`uploads/`).
+- **`media`** — clips e snapshots do Frigate (`clips/`), gravações contínuas (`recordings/`) e uploads (`uploads/`).
 - **`exports`** — exports do InfluxDB.
 - **`backups`** — backups de configuração.
 
