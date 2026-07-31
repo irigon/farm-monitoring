@@ -18,8 +18,8 @@ volumes:
   grafana-data:
   prometheus-data:
   minio-data:        # Dev: Docker volume. Production: replace with bind mount to external drive
-                     # e.g. remove this named volume and use "- /mnt/external-hdd/minio:/data" in the minio service
-  frigate-storage:   # Dev: Docker volume. Production: can mount to external drive for recordings
+                     # e.g. remove this named volume and use "- /mnt/external-hdd/minio:/data" in the minio #service
+#  frigate-storage:   # Dev: Docker volume. Production: can mount to external drive for recordings
 
 services:
 
@@ -285,60 +285,60 @@ services:
   # Consumes RTSP streams (or test video via go2rtc), runs CPU-based object
   # detection, publishes events to MQTT (frigate/events), saves clips/snapshots.
   # Production: replace test video with real RTSP cameras, add Google Coral TPU.
-  frigate:
-    image: ghcr.io/blakeblackshear/frigate:stable
-    container_name: frigate
-    restart: unless-stopped
-    mem_limit: 1500m
-    mem_reservation: 512m
-    ports:
-      - "5000:5000"     # Frigate Web UI
-      - "8554:8554"     # RTSP restream (go2rtc)
-      - "8555:8555/tcp" # WebRTC (TCP)
-      - "8555:8555/udp" # WebRTC (UDP)
-    shm_size: "256mb"   # Shared memory for ffmpeg (increase for multiple cameras)
-    environment:
-      FRIGATE_MQTT_USER: "${FRIGATE_MQTT_USER}"
-      FRIGATE_MQTT_PASSWORD: "${FRIGATE_MQTT_PASSWORD}"
-      GO2RTC_ALLOW_ARBITRARY_EXEC: "true"
-    volumes:
-      - ./config/frigate/config.yml:/config/config.yml
-      - frigate-storage:/media/frigate
-      - ./test-data/video:/test-video:ro
-    depends_on:
-      - mosquitto
-    networks:
-      - monitoring
-
-  # ---------------------------------------------------------------------------
-  # Frigate → MinIO — Continuous media sync sidecar
-  # ---------------------------------------------------------------------------
-  # Frigate has no native S3 backend; it writes clips/recordings/exports to its
-  # local volume. This sidecar mirrors that volume into the MinIO "media" bucket
-  # via `mc mirror --watch`, which triggers minio.events → InfluxDB events (kind=object).
-  frigate-to-minio:
-    image: minio/mc:latest
-    container_name: frigate-to-minio
-    restart: unless-stopped
-    mem_limit: 128m
-    mem_reservation: 32m
-    entrypoint: /bin/sh
-    command: /scripts/frigate-to-minio.sh
-    volumes:
-      - ./scripts:/scripts:ro
-      - frigate-storage:/media/frigate:ro
-    environment:
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
-    depends_on:
-      minio:
-        condition: service_healthy
-      minio-setup:
-        condition: service_completed_successfully
-      frigate:
-        condition: service_started
-    networks:
-      - monitoring
+#  frigate:
+#    image: ghcr.io/blakeblackshear/frigate:stable
+#    container_name: frigate
+#    restart: unless-stopped
+#    mem_limit: 1500m
+#    mem_reservation: 512m
+#    ports:
+#      - "5000:5000"     # Frigate Web UI
+#      - "8554:8554"     # RTSP restream (go2rtc)
+#      - "8555:8555/tcp" # WebRTC (TCP)
+#      - "8555:8555/udp" # WebRTC (UDP)
+#    shm_size: "256mb"   # Shared memory for ffmpeg (increase for multiple cameras)
+#    environment:
+#      FRIGATE_MQTT_USER: "${FRIGATE_MQTT_USER}"
+#      FRIGATE_MQTT_PASSWORD: "${FRIGATE_MQTT_PASSWORD}"
+#      GO2RTC_ALLOW_ARBITRARY_EXEC: "true"
+#    volumes:
+#      - ./config/frigate/config.yml:/config/config.yml
+#      - frigate-storage:/media/frigate
+#      - ./test-data/video:/test-video:ro
+#    depends_on:
+#      - mosquitto
+#    networks:
+#      - monitoring
+#
+#  # ---------------------------------------------------------------------------
+#  # Frigate → MinIO — Continuous media sync sidecar
+#  # ---------------------------------------------------------------------------
+#  # Frigate has no native S3 backend; it writes clips/recordings/exports to its
+#  # local volume. This sidecar mirrors that volume into the MinIO "media" bucket
+#  # via `mc mirror --watch`, which triggers minio.events → InfluxDB events (kind=object).
+#  frigate-to-minio:
+#    image: minio/mc:latest
+#    container_name: frigate-to-minio
+#    restart: unless-stopped
+#    mem_limit: 128m
+#    mem_reservation: 32m
+#    entrypoint: /bin/sh
+#    command: /scripts/frigate-to-minio.sh
+#    volumes:
+#      - ./scripts:/scripts:ro
+#      - frigate-storage:/media/frigate:ro
+#    environment:
+#      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+#      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+#    depends_on:
+#      minio:
+#        condition: service_healthy
+#      minio-setup:
+#        condition: service_completed_successfully
+#      frigate:
+#        condition: service_started
+#    networks:
+#      - monitoring
 
   # ===========================================================================
   # Phase 4: Observability
