@@ -416,14 +416,17 @@ services:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
     restart: unless-stopped
-    privileged: true
+    security_opt:
+      - label=disable
+    cap_add:
+      - SYS_ADMIN
     mem_limit: 256m
     mem_reservation: 64m
     devices:
       - /dev/kmsg
     volumes:
       - /:/rootfs:ro
-      - /var/run:/var/run:ro,Z
+      - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
