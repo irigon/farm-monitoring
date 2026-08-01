@@ -52,6 +52,16 @@
           "format": "table"
         }
       ],
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": ["source"],
+            "keepFields": false,
+            "naming": { "asLabels": true }
+          }
+        }
+      ],
       "options": {
         "legend": { "displayMode": "list", "placement": "bottom" },
         "tooltip": { "mode": "multi" }
