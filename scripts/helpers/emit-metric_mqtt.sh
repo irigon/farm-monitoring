@@ -32,9 +32,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/../.env"
 if [[ -f "$ENV_FILE" ]]; then
   # exporta apenas as chaves MQTT_ do .env, sem sobrescrever o que já veio do ambiente
-  while IFS='=' read -r key val; do
-    [[ "$key" =~ ^MQTT_(USER|PASSWORD)$ ]] || continue
-    [[ -n "${!key:-}" ]] && continue
+  while IFS='=' read -r key val; do  # divide a linha em key e val
+    [[ -n "${!key:-}" ]] && continue 
     val="${val%\"}"; val="${val#\"}"
     export "$key=$val"
   done < <(grep -E '^MQTT_(USER|PASSWORD)=' "$ENV_FILE" || true)
