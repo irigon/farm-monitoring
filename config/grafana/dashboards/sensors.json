@@ -48,7 +48,7 @@
       "targets": [
         {
           "refId": "A",
-          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'temp' AND $__timeFilter(time) ORDER BY time",
+          "rawSql": "SELECT time, source, value FROM events WHERE kind = 'metric' AND measure = 'temperature' AND $__timeFilter(time) ORDER BY time",
           "format": "table"
         }
       ],
